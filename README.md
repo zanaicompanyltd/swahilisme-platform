@@ -1,0 +1,1 @@
+﻿# SwahiliSME Platform
