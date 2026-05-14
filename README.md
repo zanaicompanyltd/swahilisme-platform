@@ -65,7 +65,8 @@ curl http://localhost:8000/api/v1/dashboard/top-products?user_id=test123
 
 # Spending patterns
 curl http://localhost:8000/api/v1/dashboard/spending-patterns?user_id=test123
-API Response Example
+
+### API Response Example
 json
 {
   "period": "week",
@@ -75,29 +76,23 @@ json
   "profit_margin": 53.6,
   "transactions_count": 42
 }
-📊 Dashboard Features
-1.6.1 Revenue / Cost / Profit Charts
-Interactive area chart showing weekly trends
+### 📊 Dashboard Features
+## 1.6.1 Revenue / Cost / Profit Charts
+-Interactive area chart showing weekly trends
+-Real-time profit margin calculation
+-Swahili labels and formatting
 
-Real-time profit margin calculation
+## 1.6.2 Top Products View
+-Rank products by revenue contribution
+-Display units sold
+-Visual bar chart representation
 
-Swahili labels and formatting
+## 1.6.3 Spending Patterns
+-Pie chart breakdown by expense category
+-Percentage distribution
+-Category comparison
 
-1.6.2 Top Products View
-Rank products by revenue contribution
-
-Display units sold
-
-Visual bar chart representation
-
-1.6.3 Spending Patterns
-Pie chart breakdown by expense category
-
-Percentage distribution
-
-Category comparison
-
-🛠 Tech Stack
+### 🛠 Tech Stack
 Backend
 Technology	Purpose
 FastAPI	High-performance REST API
@@ -122,7 +117,7 @@ Technology	Purpose
 Docker	Containerization
 GitHub Actions	CI/CD pipeline
 Railway/Vercel	Cloud deployment
-📁 Project Structure
+### 📁 Project Structure
 text
 swahilisme-platform/
 ├── backend/                 # FastAPI backend
@@ -154,7 +149,7 @@ swahilisme-platform/
 ├── Dockerfile
 ├── docker-compose.yml
 └── requirements.txt
-🏃‍♂️ Quick Start
+### 🏃‍♂️ Quick Start
 Prerequisites
 Python 3.11+
 
@@ -162,11 +157,11 @@ Node.js 18+
 
 Git
 
-1. Clone the repository
+## 1. Clone the repository
 bash
 git clone https://github.com/PatrickIIT/swahilisme-platform.git
 cd swahilisme-platform
-2. Backend Setup
+## 2. Backend Setup
 bash
 # Create virtual environment
 python -m venv venv
@@ -180,19 +175,19 @@ cp .env.example .env
 
 # Run the server
 uvicorn backend.api.app:app --reload
-3. Frontend Setup
+## 3. Frontend Setup
 bash
 cd frontend
 npm install
 npm start
-4. Access the application
+## 4. Access the application
 Backend API: http://localhost:8000
 
 API Documentation: http://localhost:8000/docs
 
 Frontend Dashboard: http://localhost:3000
 
-📱 WhatsApp Integration
+### 📱 WhatsApp Integration
 The platform sends weekly business summaries via WhatsApp:
 
 javascript
@@ -206,14 +201,14 @@ javascript
 
 ---
 _SwahiliSME — Msaidizi wako wa biashara_
-Webhook Setup
+## Webhook Setup
 Configure Meta Developer account
 
 Set webhook URL: https://your-domain.com/api/v1/whatsapp/webhook
 
 Verify with token: swahilisme_verify_2026
 
-📄 Business Health Card
+### 📄 Business Health Card
 After 90 days and 30+ transactions, users can generate a professional PDF report:
 
 Business summary with revenue/cost/profit
@@ -226,7 +221,7 @@ Loan application ready
 
 Required legal disclaimer in Swahili
 
-🗺️ Roadmap
+### 🗺️ Roadmap
 Phase	Features	Timeline
 MVP v1.0	Dashboard + WhatsApp + PWA	✅ May 2026
 v1.1	Daftari Yangu (voice bookkeeping)	📋 June 2026
@@ -234,7 +229,7 @@ v1.2	Mshauri Wangu (compliance chatbot)	📋 July 2026
 v1.3	M-Pesa integration	📋 August 2026
 v2.0	Multi-language (English, French)	📋 Q4 2026
 v3.0	SME marketplace & credit scoring	📋 2027
-🤝 Contributing
+### 🤝 Contributing
 We welcome contributions! Please see our Contributing Guidelines.
 
 Fork the repository
@@ -247,7 +242,7 @@ Push to the branch (git push origin feature/AmazingFeature)
 
 Open a Pull Request
 
-📞 Support & Contact
+### 📞 Support & Contact
 Project Lead: Patrick IIT
 
 Email: zda24m007@iitmz.ac.in
@@ -256,11 +251,11 @@ GitHub: @PatrickIIT
 
 Repository: swahilisme-platform
 
-📜 License
-This project is proprietary and owned by DASUC Project.
+### 📜 License
+This project is proprietary and owned by ZanAI.
 All rights reserved. See LICENSE for details.
 
-🙏 Acknowledgments
+### 🙏 Acknowledgments
 DASUC for project sponsorship
 
 IITM Zanzibar for academic support
@@ -269,11 +264,11 @@ TRA, BRELA, SIDO for regulatory guidance
 
 Open Source Community for amazing tools
 
-⭐ Star History
+### ⭐ Star History
 If you find this project useful, please give it a star! ⭐
 
 <div align="center">
-Built with ❤️ for East African SMEs
+Built with ❤️ for African SMEs
 
 "Teknolojia kwa Lugha Yetu, Mafanikio kwa Biashara Zetu"
 
