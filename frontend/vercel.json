@@ -3,12 +3,12 @@
     { "source": "/(.*)", "destination": "/index.html" }
   ],
   "env": {
-    "CI": "false",
+    "REACT_APP_API_URL": "https://swahilisme-platform.up.railway.app",
     "SKIP_PREFLIGHT_CHECK": "true",
     "TSC_COMPILE_ON_ERROR": "true",
     "DISABLE_ESLINT_PLUGIN": "true"
   },
-  "buildCommand": "CI=false npm run build",
+  "buildCommand": "npm run build",
   "outputDirectory": "build",
   "framework": "create-react-app"
 }
