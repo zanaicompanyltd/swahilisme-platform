@@ -10,4 +10,7 @@ redis>=5.0.0
 # Add others you use:
 openai>=1.0.0
 faiss-cpu>=1.0.0
+whisper  # or faster-whisper
+spacy
+python-multipart
 # or whatever you need for Whisper, spaCy, etc.
