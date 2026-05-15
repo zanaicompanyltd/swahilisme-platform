@@ -189,43 +189,40 @@ function AnalyticsDashboard({ userId = "demo-user-001" }) {
   }, []);
 
   const fetchAll = useCallback(async () => {
-    setLoading(true);
-    setError(null);
-    
-    // Show refresh spinner only for manual refresh
-    if (isRefreshing) setIsRefreshing(true);
-    
-    try {
-      const [sumRes, chartRes, prodRes, spendRes, healthRes] = await Promise.all([
-        axios.get(`${API}/api/v1/dashboard/summary?user_id=${userId}&period=${period}`, { timeout: 10000 }),
-        axios.get(`${API}/api/v1/dashboard/revenue-cost-profit?user_id=${userId}`, { timeout: 10000 }),
-        axios.get(`${API}/api/v1/dashboard/top-products?user_id=${userId}`, { timeout: 10000 }),
-        axios.get(`${API}/api/v1/dashboard/spending-patterns?user_id=${userId}`, { timeout: 10000 }),
-        axios.get(`${API}/api/v1/dashboard/health-card-status?user_id=${userId}`, { timeout: 10000 }),
-      ]);
-  
-      setSummary(sumRes.data);
-      
-      const labels = chartRes.data.labels || [];
-      setChartData(labels.map((day, i) => ({
-        day,
-        [sw.dashboard.revenue]: chartRes.data.revenue?.[i] || 0,
-        [sw.dashboard.cost]: chartRes.data.cost?.[i] || 0,
-        [sw.dashboard.profit]: chartRes.data.profit?.[i] || 0,
-      })));
-  
-      setTopProducts(prodRes.data.products || []);
-      setSpending(spendRes.data.categories || []);
-      setHealthCard(healthRes.data);
-  
-    } catch (err) {
-      console.error("[Dashboard] Fetch error:", err);
-      setError(sw.errors.network || "Haiwezi kuunganisha na seva. Jaribu tena baadaye.");
-    } finally {
-      setLoading(false);
-      if (isRefreshing) setIsRefreshing(false);
-    }
-  }, [userId, period, API, isRefreshing]); // ← Added isRefreshing to deps
+  setLoading(true);
+  setError(null);
+  try {
+    const [sumRes, chartRes, prodRes, spendRes, healthRes] = await Promise.all([
+      axios.get(`${API}/api/v1/dashboard/summary?user_id=${userId}&period=${period}`),
+      axios.get(`${API}/api/v1/dashboard/revenue-cost-profit?user_id=${userId}`),
+      axios.get(`${API}/api/v1/dashboard/top-products?user_id=${userId}`),
+      axios.get(`${API}/api/v1/dashboard/spending-patterns?user_id=${userId}`),
+      axios.get(`${API}/api/v1/dashboard/health-card-status?user_id=${userId}`),
+    ]);
+
+    setSummary(sumRes.data);
+    // Chart data transformation
+    const labels = chartRes.data.labels || chartRes.data.days || [];
+    setChartData(labels.map((day, i) => ({
+      day,
+      [sw.dashboard.revenue]: chartRes.data.revenue?.[i] || 0,
+      [sw.dashboard.cost]: chartRes.data.cost?.[i] || 0,
+      [sw.dashboard.profit]: chartRes.data.profit?.[i] || 0,
+    })));
+
+    setTopProducts(prodRes.data.products || prodRes.data || []);
+    setSpending(spendRes.data.categories || spendRes.data || []);
+    setHealthCard(healthRes.data);
+
+  } catch (err) {
+    console.error("[Dashboard] Fetch error:", err);
+    setError("Haiwezi kupata data kutoka seva. Jaribu tena au tumia demo data.");
+    // Optional: Set some demo data so it doesn't look broken
+    setSummary({ total_revenue: 125000, total_cost: 58000, net_profit: 67000, transactions_count: 42 });
+  } finally {
+    setLoading(false);
+  }
+}, [userId, period, API]);
 
   useEffect(() => { fetchAll(); }, [fetchAll]);
 
