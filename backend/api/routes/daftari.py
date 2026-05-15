@@ -3,26 +3,34 @@ backend/api/routes/daftari.py
 REST API routes for Module 1: Daftari Yangu
 
 Endpoints:
-  POST /api/v1/daftari/transcribe         – Upload audio → ASR → NLP
-  POST /api/v1/daftari/transactions       – Create transaction (manual or from NLP)
-  GET  /api/v1/daftari/transactions       – List transactions with filters
-  DELETE /api/v1/daftari/transactions/{id} – Delete transaction
-  GET  /api/v1/daftari/summary            – Summary stats
-  GET  /api/v1/daftari/top-products       – Top performing products
-  GET  /api/v1/daftari/spending           – Spending by category
-  POST /api/v1/daftari/sync               – Flush offline sync queue
-  GET  /api/v1/daftari/health-card        – Generate Business Health Card PDF
+  POST /api/v1/daftari/transcribe          - Upload audio -> ASR -> NLP
+  POST /api/v1/daftari/transactions        - Create transaction
+  GET  /api/v1/daftari/transactions        - List transactions
+  DELETE /api/v1/daftari/transactions/{id} - Delete transaction
+  GET  /api/v1/daftari/summary             - Summary stats
+  GET  /api/v1/daftari/top-products        - Top products
+  GET  /api/v1/daftari/spending            - Spending by category
+  POST /api/v1/daftari/sync                - Flush offline sync queue
+  GET  /api/v1/daftari/health-card         - Generate Business Health Card PDF
 """
+# ── Path fix: MUST be the very first thing before ANY other import ────────────
+import os
+import sys
+# Walks up: daftari.py -> routes -> api -> backend -> project root
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))))
+# ─────────────────────────────────────────────────────────────────────────────
+
 from datetime import datetime
 from typing import Optional
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile
-from fastapi.responses import Response, StreamingResponse
+from fastapi.responses import Response
 from pydantic import BaseModel, Field
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.db.database import get_db
-from backend.models.ledger import TransactionCategory, TransactionType
+from backend.models.ledger import TransactionCategory, TransactionType, User
 from backend.services.asr.whisper_service import get_asr_service
 from backend.services.nlp.swahili_ner import get_nlp_service
 from backend.services import ledger_service
@@ -58,49 +66,24 @@ class CreateTransactionRequest(BaseModel):
     local_id: Optional[str] = None
 
 
-class TransactionResponse(BaseModel):
-    id: str
-    user_id: str
-    type: str
-    category: str
-    amount: float
-    description: str
-    transaction_date: str
-    source: str
-    product_name: Optional[str]
-    quantity: Optional[float]
-    nlp_confidence: Optional[float]
-    is_synced: bool
-    created_at: str
-
-    class Config:
-        from_attributes = True
-
-
 # ── 1.3.1 + 1.3.2  Transcribe + NLP ─────────────────────────────────────────
 
-@router.post("/transcribe", response_model=TranscribeResponse, summary="Rekodi sauti → maandishi (ASR + NLP)")
+@router.post("/transcribe", response_model=TranscribeResponse,
+             summary="Rekodi sauti -> maandishi (ASR + NLP)")
 async def transcribe_audio(
     user_id: str = Form(...),
     audio: UploadFile = File(...),
 ):
-    """
-    Upload an audio file (webm/wav/mp3/ogg).
-    Returns Swahili transcript + NLP-extracted entities (amount, category, date).
-    """
     audio_bytes = await audio.read()
-
     if len(audio_bytes) == 0:
         raise HTTPException(400, "Faili la sauti liko tupu / Audio file is empty")
 
-    # ASR
     asr = get_asr_service()
     try:
         asr_result = await asr.transcribe(audio_bytes, filename=audio.filename or "audio.webm")
     except RuntimeError as e:
         raise HTTPException(500, str(e))
 
-    # NLP
     nlp = get_nlp_service()
     nlp_result = nlp.extract(asr_result.transcript)
 
@@ -129,9 +112,7 @@ async def create_transaction(
     req: CreateTransactionRequest,
     db: AsyncSession = Depends(get_db),
 ):
-    # Ensure user exists
     await ledger_service.get_or_create_user(db, req.user_id)
-
     tx = await ledger_service.create_transaction(
         db=db,
         user_id=req.user_id,
@@ -149,13 +130,16 @@ async def create_transaction(
         nlp_entities=req.nlp_entities,
         local_id=req.local_id,
     )
-
     return {
-        "id": tx.id,
-        "status": "created",
-        "amount": tx.amount,
-        "type": tx.type.value,
-        "category": tx.category.value,
+        "id":        tx.id,
+        "status":    "created",
+        "amount":    tx.amount,
+        "revenue":   tx.revenue,
+        "cost":      tx.cost,
+        "profit":    tx.profit,
+        "type":      tx.type.value,
+        "category":  tx.category.value,
+        "timestamp": tx.timestamp.isoformat(),
         "is_synced": tx.is_synced,
     }
 
@@ -176,18 +160,21 @@ async def list_transactions(
     )
     return [
         {
-            "id": t.id,
-            "type": t.type.value,
-            "category": t.category.value,
-            "amount": t.amount,
-            "description": t.description,
-            "transaction_date": t.transaction_date.isoformat(),
-            "source": t.source,
-            "product_name": t.product_name,
-            "quantity": t.quantity,
-            "nlp_confidence": t.nlp_confidence,
-            "is_synced": t.is_synced,
-            "created_at": t.created_at.isoformat(),
+            "id":               t.id,
+            "type":             t.type.value,
+            "category":         t.category.value,
+            "amount":           t.amount,
+            "revenue":          t.revenue,
+            "cost":             t.cost,
+            "profit":           t.profit,
+            "description":      t.description,
+            "transaction_date": t.timestamp.isoformat(),
+            "source":           t.source.value if t.source else "manual",
+            "product_name":     t.product_name,
+            "quantity":         t.quantity,
+            "nlp_confidence":   t.nlp_confidence,
+            "is_synced":        t.is_synced,
+            "created_at":       t.created_at.isoformat(),
         }
         for t in txs
     ]
@@ -205,7 +192,7 @@ async def delete_transaction(
     return {"status": "deleted", "id": tx_id}
 
 
-# ── Summary endpoints ─────────────────────────────────────────────────────────
+# ── Summary ───────────────────────────────────────────────────────────────────
 
 @router.get("/summary", summary="Muhtasari wa biashara (Business summary)")
 async def get_summary(
@@ -270,25 +257,18 @@ async def get_health_card(
     days: int = Query(90, ge=30, le=365),
     db: AsyncSession = Depends(get_db),
 ):
-    """
-    Generate Business Health Card PDF.
-    Requires user to exist and have at least 1 transaction.
-    """
-    # Fetch user
-    from sqlalchemy import select
-    from backend.models.ledger import User
     user_q = select(User).where(User.id == user_id)
     user = (await db.execute(user_q)).scalar_one_or_none()
     if not user:
         raise HTTPException(404, "Mtumiaji hajapatikana. Kwanza ingiza muamala mmoja.")
 
-    summary = await ledger_service.get_summary(db, user_id, days)
+    summary      = await ledger_service.get_summary(db, user_id, days)
     top_products = await ledger_service.get_top_products(db, user_id, days)
-    spending = await ledger_service.get_spending_by_category(db, user_id, days)
+    spending     = await ledger_service.get_spending_by_category(db, user_id, days)
 
     pdf_bytes = generate_health_card(
         business_name=user.business_name,
-        owner_name=user.owner_name,
+        owner_name=user.name,
         summary=summary,
         top_products=top_products,
         spending_by_category=spending,
@@ -297,7 +277,10 @@ async def get_health_card(
         phone=user.phone,
     )
 
-    filename = f"kadi-afya-{user.business_name.replace(' ', '-').lower()}-{datetime.utcnow().strftime('%Y%m%d')}.pdf"
+    filename = (
+        f"kadi-afya-{user.business_name.replace(' ', '-').lower()}"
+        f"-{datetime.utcnow().strftime('%Y%m%d')}.pdf"
+    )
     return Response(
         content=pdf_bytes,
         media_type="application/pdf",

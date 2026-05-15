@@ -1,12 +1,11 @@
 """
 backend/services/ledger_service.py
-1.3.3 – Ledger Storage & Offline Sync
+1.3.3 - Ledger Storage & Offline Sync
 
-Handles:
-  • CRUD operations for transactions (SQLite primary, Postgres target)
-  • Offline queue: unsync'd records tracked in sync_queue table
-  • Sync push: batch-uploads queued records to Postgres when online
-  • Summary stats used by dashboard and Health Card
+Uses the shared SwahiliSME schema (section 2.5.3 of the requirements spec).
+Key alignment:
+  - Transaction.revenue / .cost / .profit  (spec fields)
+  - User.name / .business_name / .phone    (spec fields)
 """
 import uuid
 import logging
@@ -19,17 +18,44 @@ from sqlalchemy.ext.asyncio import AsyncSession
 try:
     from backend.models.ledger import (
         Transaction, SyncQueue, User,
-        TransactionType, TransactionCategory,
+        TransactionType, TransactionCategory, TransactionSource,
     )
 except ModuleNotFoundError:
     import sys, os
     sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", ".."))
     from backend.models.ledger import (
         Transaction, SyncQueue, User,
-        TransactionType, TransactionCategory,
+        TransactionType, TransactionCategory, TransactionSource,
     )
 
 logger = logging.getLogger(__name__)
+
+
+# ── User helpers ──────────────────────────────────────────────────────────────
+
+async def get_or_create_user(
+    db: AsyncSession,
+    user_id: str,
+    business_name: str = "Biashara Yangu",
+    name: str = "Mtumiaji",
+    phone: Optional[str] = None,
+    business_type: Optional[str] = None,
+    location: Optional[str] = None,
+) -> User:
+    result = await db.execute(select(User).where(User.id == user_id))
+    user = result.scalar_one_or_none()
+    if not user:
+        user = User(
+            id=user_id,
+            name=name,
+            business_name=business_name,
+            phone=phone,
+            business_type=business_type,
+            location=location,
+        )
+        db.add(user)
+        await db.flush()
+    return user
 
 
 # ── Transaction CRUD ──────────────────────────────────────────────────────────
@@ -51,16 +77,32 @@ async def create_transaction(
     nlp_entities: Optional[dict] = None,
     local_id: Optional[str] = None,
 ) -> Transaction:
-    tx_id = str(uuid.uuid4())
+
+    # Compute revenue / cost / profit per spec
+    revenue = amount if tx_type == TransactionType.MAPATO  else 0.0
+    cost    = amount if tx_type == TransactionType.GHARAMA else 0.0
+    profit  = revenue - cost
+
+    # Map source string to enum
+    src_map = {
+        "voice":    TransactionSource.VOICE,
+        "manual":   TransactionSource.MANUAL,
+        "whatsapp": TransactionSource.WHATSAPP,
+    }
+    source_enum = src_map.get(source, TransactionSource.MANUAL)
+
     tx = Transaction(
-        id=tx_id,
+        id=str(uuid.uuid4()),
         user_id=user_id,
         type=tx_type,
         category=category,
         amount=amount,
+        revenue=revenue,
+        cost=cost,
+        profit=profit,
+        source=source_enum,
         description=description,
-        transaction_date=transaction_date or datetime.utcnow(),
-        source=source,
+        timestamp=transaction_date or datetime.utcnow(),
         raw_transcript=raw_transcript,
         nlp_confidence=nlp_confidence,
         product_name=product_name,
@@ -73,10 +115,9 @@ async def create_transaction(
     db.add(tx)
     await db.flush()
 
-    # Queue for Postgres sync
-    await _enqueue_sync(db, user_id, tx_id, "create", tx)
-
-    logger.info(f"Transaction created: {tx_id} | {tx_type} | TZS {amount:,.0f}")
+    # Queue for sync
+    await _enqueue_sync(db, user_id, tx.id, "create", tx)
+    logger.info(f"Transaction created: {tx.id} | {tx_type} | TZS {amount:,.0f}")
     return tx
 
 
@@ -89,26 +130,26 @@ async def get_transactions(
     category: Optional[TransactionCategory] = None,
     date_from: Optional[datetime] = None,
     date_to: Optional[datetime] = None,
-) -> list[Transaction]:
+) -> list:
     q = select(Transaction).where(Transaction.user_id == user_id)
     if tx_type:
         q = q.where(Transaction.type == tx_type)
     if category:
         q = q.where(Transaction.category == category)
     if date_from:
-        q = q.where(Transaction.transaction_date >= date_from)
+        q = q.where(Transaction.timestamp >= date_from)
     if date_to:
-        q = q.where(Transaction.transaction_date <= date_to)
-    q = q.order_by(desc(Transaction.transaction_date)).limit(limit).offset(offset)
-    result = await db.execute(q)
-    return result.scalars().all()
+        q = q.where(Transaction.timestamp <= date_to)
+    q = q.order_by(desc(Transaction.timestamp)).limit(limit).offset(offset)
+    return (await db.execute(q)).scalars().all()
 
 
 async def delete_transaction(db: AsyncSession, tx_id: str, user_id: str) -> bool:
-    q = select(Transaction).where(
-        and_(Transaction.id == tx_id, Transaction.user_id == user_id)
+    result = await db.execute(
+        select(Transaction).where(
+            and_(Transaction.id == tx_id, Transaction.user_id == user_id)
+        )
     )
-    result = await db.execute(q)
     tx = result.scalar_one_or_none()
     if not tx:
         return False
@@ -119,71 +160,50 @@ async def delete_transaction(db: AsyncSession, tx_id: str, user_id: str) -> bool
 
 # ── Summary / Analytics ───────────────────────────────────────────────────────
 
-async def get_summary(
-    db: AsyncSession,
-    user_id: str,
-    days: int = 30,
-) -> dict:
-    """Returns revenue, cost, profit, margin and transaction count."""
+async def get_summary(db: AsyncSession, user_id: str, days: int = 30) -> dict:
     since = datetime.utcnow() - timedelta(days=days)
 
-    # Revenue
-    rev_q = select(func.sum(Transaction.amount)).where(
-        and_(
-            Transaction.user_id == user_id,
-            Transaction.type == TransactionType.MAPATO,
-            Transaction.transaction_date >= since,
-        )
-    )
-    cost_q = select(func.sum(Transaction.amount)).where(
-        and_(
-            Transaction.user_id == user_id,
-            Transaction.type == TransactionType.GHARAMA,
-            Transaction.transaction_date >= since,
-        )
-    )
+    # Use spec fields: revenue, cost, profit
+    rev_q   = select(func.sum(Transaction.revenue)).where(
+        and_(Transaction.user_id == user_id, Transaction.timestamp >= since))
+    cost_q  = select(func.sum(Transaction.cost)).where(
+        and_(Transaction.user_id == user_id, Transaction.timestamp >= since))
     count_q = select(func.count(Transaction.id)).where(
-        and_(Transaction.user_id == user_id, Transaction.transaction_date >= since)
-    )
+        and_(Transaction.user_id == user_id, Transaction.timestamp >= since))
 
-    revenue = (await db.execute(rev_q)).scalar() or 0.0
-    cost = (await db.execute(cost_q)).scalar() or 0.0
-    count = (await db.execute(count_q)).scalar() or 0
+    revenue = (await db.execute(rev_q)).scalar()   or 0.0
+    cost    = (await db.execute(cost_q)).scalar()  or 0.0
+    count   = (await db.execute(count_q)).scalar() or 0
 
     profit = revenue - cost
-    margin = round((profit / revenue * 100), 1) if revenue > 0 else 0.0
+    margin = round(profit / revenue * 100, 1) if revenue > 0 else 0.0
 
     return {
-        "period_days": days,
-        "total_revenue": revenue,
-        "total_cost": cost,
-        "net_profit": profit,
-        "profit_margin": margin,
+        "period_days":        days,
+        "total_revenue":      revenue,
+        "total_cost":         cost,
+        "net_profit":         profit,
+        "profit_margin":      margin,
         "transactions_count": count,
     }
 
 
 async def get_top_products(
-    db: AsyncSession,
-    user_id: str,
-    days: int = 30,
-    limit: int = 5,
-) -> list[dict]:
+    db: AsyncSession, user_id: str, days: int = 30, limit: int = 5
+) -> list:
     since = datetime.utcnow() - timedelta(days=days)
     q = (
         select(
             Transaction.product_name,
-            func.sum(Transaction.amount).label("total_revenue"),
+            func.sum(Transaction.revenue).label("total_revenue"),
             func.sum(Transaction.quantity).label("total_units"),
         )
-        .where(
-            and_(
-                Transaction.user_id == user_id,
-                Transaction.type == TransactionType.MAPATO,
-                Transaction.product_name.isnot(None),
-                Transaction.transaction_date >= since,
-            )
-        )
+        .where(and_(
+            Transaction.user_id == user_id,
+            Transaction.type == TransactionType.MAPATO,
+            Transaction.product_name.isnot(None),
+            Transaction.timestamp >= since,
+        ))
         .group_by(Transaction.product_name)
         .order_by(desc("total_revenue"))
         .limit(limit)
@@ -196,23 +216,19 @@ async def get_top_products(
 
 
 async def get_spending_by_category(
-    db: AsyncSession,
-    user_id: str,
-    days: int = 30,
-) -> list[dict]:
+    db: AsyncSession, user_id: str, days: int = 30
+) -> list:
     since = datetime.utcnow() - timedelta(days=days)
     q = (
         select(
             Transaction.category,
-            func.sum(Transaction.amount).label("total"),
+            func.sum(Transaction.cost).label("total"),
         )
-        .where(
-            and_(
-                Transaction.user_id == user_id,
-                Transaction.type == TransactionType.GHARAMA,
-                Transaction.transaction_date >= since,
-            )
-        )
+        .where(and_(
+            Transaction.user_id == user_id,
+            Transaction.type == TransactionType.GHARAMA,
+            Transaction.timestamp >= since,
+        ))
         .group_by(Transaction.category)
         .order_by(desc("total"))
     )
@@ -223,29 +239,27 @@ async def get_spending_by_category(
 # ── Offline Sync Queue ────────────────────────────────────────────────────────
 
 async def _enqueue_sync(
-    db: AsyncSession,
-    user_id: str,
-    tx_id: str,
-    operation: str,
-    tx: Transaction,
+    db: AsyncSession, user_id: str, tx_id: str, operation: str, tx: Transaction
 ):
-    payload = {
-        "id": tx.id,
-        "user_id": tx.user_id,
-        "type": tx.type.value if tx.type else None,
-        "category": tx.category.value if tx.category else None,
-        "amount": tx.amount,
-        "description": tx.description,
-        "transaction_date": tx.transaction_date.isoformat() if tx.transaction_date else None,
-        "source": tx.source,
-        "product_name": tx.product_name,
-        "quantity": tx.quantity,
-    }
     entry = SyncQueue(
         user_id=user_id,
         transaction_id=tx_id,
         operation=operation,
-        payload=payload,
+        payload={
+            "id":           tx.id,
+            "user_id":      tx.user_id,
+            "type":         tx.type.value if tx.type else None,
+            "category":     tx.category.value if tx.category else None,
+            "amount":       tx.amount,
+            "revenue":      tx.revenue,
+            "cost":         tx.cost,
+            "profit":       tx.profit,
+            "description":  tx.description,
+            "timestamp":    tx.timestamp.isoformat() if tx.timestamp else None,
+            "source":       tx.source.value if tx.source else None,
+            "product_name": tx.product_name,
+            "quantity":     tx.quantity,
+        },
     )
     db.add(entry)
 
@@ -256,15 +270,11 @@ async def get_pending_sync_count(db: AsyncSession, user_id: str) -> int:
 
 
 async def flush_sync_queue(db: AsyncSession, user_id: str) -> dict:
-    """
-    Mark all queued transactions as synced (call after Postgres push succeeds).
-    In production this would do the actual Postgres upsert.
-    """
-    q = select(SyncQueue).where(SyncQueue.user_id == user_id)
-    rows = (await db.execute(q)).scalars().all()
-    count = len(rows)
+    rows = (await db.execute(
+        select(SyncQueue).where(SyncQueue.user_id == user_id)
+    )).scalars().all()
 
-    # Mark transactions as synced
+    count = len(rows)
     for entry in rows:
         await db.execute(
             Transaction.__table__.update()
@@ -275,21 +285,3 @@ async def flush_sync_queue(db: AsyncSession, user_id: str) -> dict:
 
     logger.info(f"Synced {count} transactions for user {user_id}")
     return {"synced": count, "synced_at": datetime.utcnow().isoformat()}
-
-
-# ── User helpers ──────────────────────────────────────────────────────────────
-
-async def get_or_create_user(
-    db: AsyncSession,
-    user_id: str,
-    business_name: str = "Biashara Yangu",
-    owner_name: str = "Mtumiaji",
-) -> User:
-    q = select(User).where(User.id == user_id)
-    result = await db.execute(q)
-    user = result.scalar_one_or_none()
-    if not user:
-        user = User(id=user_id, business_name=business_name, owner_name=owner_name)
-        db.add(user)
-        await db.flush()
-    return user

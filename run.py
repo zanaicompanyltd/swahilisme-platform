@@ -1,30 +1,27 @@
-"""
-run.py  –  Launch SwahiliSME Daftari Yangu from the project root.
-
-Usage:
-    python run.py                  # default: uvicorn on port 8000
-    python run.py --port 9000
-    python run.py --reload         # hot-reload for development
-"""
-import sys
+# run.py  (project root)
 import os
+import sys
 
-# Ensure project root is on sys.path so `backend.*` imports resolve
-sys.path.insert(0, os.path.dirname(__file__))
+# ── Resolve project root (the folder this file lives in) ─────────────────────
+PROJECT_ROOT = os.path.dirname(os.path.abspath(__file__))
 
-import argparse
+# 1. Fix sys.path for THIS process
+if PROJECT_ROOT not in sys.path:
+    sys.path.insert(0, PROJECT_ROOT)
+
+# 2. Fix PYTHONPATH so every child process uvicorn spawns (reload=True)
+#    inherits the same path — this is the real fix for the subprocess error.
+existing = os.environ.get("PYTHONPATH", "")
+if PROJECT_ROOT not in existing.split(os.pathsep):
+    os.environ["PYTHONPATH"] = PROJECT_ROOT + (os.pathsep + existing if existing else "")
+
+# ─────────────────────────────────────────────────────────────────────────────
 import uvicorn
-
-parser = argparse.ArgumentParser(description="Run Daftari Yangu API")
-parser.add_argument("--host",   default="0.0.0.0")
-parser.add_argument("--port",   default=8000, type=int)
-parser.add_argument("--reload", action="store_true")
-args = parser.parse_args()
 
 if __name__ == "__main__":
     uvicorn.run(
         "backend.api.app:app",
-        host=args.host,
-        port=args.port,
-        reload=args.reload,
+        host="0.0.0.0",
+        port=8000,
+        reload=True,
     )

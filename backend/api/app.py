@@ -1,66 +1,25 @@
-from fastapi import FastAPI
-from fastapi.middleware.cors import CORSMiddleware
-from api.routes import dashboard
-
-app = FastAPI(
-    title="SwahiliSME Platform API",
-    description="AI-powered Swahili business management for SMEs in East Africa",
-    version="1.0.0-MVP",
-    docs_url="/docs",
-    redoc_url="/redoc",
-)
-
-# CORS — allow Vercel frontend + local dev
-ALLOWED_ORIGINS = os.getenv(
-    "ALLOWED_ORIGINS",
-    "http://localhost:3000,https://*.vercel.app"
-).split(",")
-
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],  # tighten in production with ALLOWED_ORIGINS
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
-
-# ── Routes ───────────────────────────────────────────────────────────────────
-app.include_router(
-    dashboard.router,
-    prefix="/api/v1/dashboard",
-    tags=["📊 Dashboard Analytics"],
-)
-
-# ── Root endpoints ────────────────────────────────────────────────────────────
-@app.get("/", tags=["Root"])
-async def root():
-    return {
-        "message": "Karibu kwenye SwahiliSME Platform! 🇹🇿",
-        "platform": "SwahiliSME",
-        "version": "1.0.0-MVP",
-        "status": "operational",
-        "docs": "/docs",
-        "tagline": "Teknolojia kwa Lugha Yetu",
-    }
-
-@app.get("/health", tags=["Root"])
-async def health():
-    return {
-        "status": "healthy",
-        "platform": "SwahiliSME",
-    }
-
-
 """
 backend/api/app.py
-FastAPI application entrypoint for SwahiliSME – Daftari Yangu
+FastAPI application entrypoint for SwahiliSME - Daftari Yangu
 """
+# ── Path fix: MUST be the very first thing before ANY other import ────────────
+import os
+import sys
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+# ─────────────────────────────────────────────────────────────────────────────
+
 import logging
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+
+# Load .env file if python-dotenv is installed
+try:
+    from dotenv import load_dotenv
+    load_dotenv()
+except ImportError:
+    pass
 
 from backend.db.database import init_db
 from backend.api.routes.daftari import router as daftari_router
@@ -74,15 +33,16 @@ logger = logging.getLogger(__name__)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    logger.info("🚀 SwahiliSME Daftari Yangu starting up…")
+    logger.info("SwahiliSME Daftari Yangu starting up...")
     await init_db()
-    logger.info("✅ Database tables initialised")
+    db_mode = os.getenv("DB_MODE", "sqlite")
+    logger.info(f"Database tables initialised - mode: {db_mode}")
     yield
-    logger.info("👋 Shutting down")
+    logger.info("Shutting down")
 
 
 app = FastAPI(
-    title="SwahiliSME – Daftari Yangu API",
+    title="SwahiliSME - Daftari Yangu API",
     description=(
         "Module 1: AI-powered voice bookkeeping for East African SMEs.\n\n"
         "Teknolojia kwa Lugha Yetu, Mafanikio kwa Biashara Zetu."
@@ -93,10 +53,8 @@ app = FastAPI(
     redoc_url="/redoc",
 )
 
-# ── CORS ──────────────────────────────────────────────────────────────────────
-import os
+# CORS
 allowed_origins = os.getenv("ALLOWED_ORIGINS", "http://localhost:3000").split(",")
-
 app.add_middleware(
     CORSMiddleware,
     allow_origins=allowed_origins,
@@ -105,21 +63,22 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# ── Routes ────────────────────────────────────────────────────────────────────
+# Routes
 app.include_router(daftari_router)
 
 
 @app.get("/", tags=["Health"])
 async def root():
     return {
-        "app": "SwahiliSME – Daftari Yangu",
+        "app": "SwahiliSME - Daftari Yangu",
         "version": "1.0.0",
         "status": "running",
+        "db_mode": os.getenv("DB_MODE", "sqlite"),
         "docs": "/docs",
-        "tagline": "Teknolojia kwa Lugha Yetu 🇹🇿",
+        "tagline": "Teknolojia kwa Lugha Yetu",
     }
 
 
 @app.get("/health", tags=["Health"])
 async def health():
-    return {"status": "ok"}
+    return {"status": "ok", "db_mode": os.getenv("DB_MODE", "sqlite")}
