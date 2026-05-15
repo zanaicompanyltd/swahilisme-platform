@@ -21,8 +21,8 @@ try:
 except ImportError:
     pass
 
-from backend.db.database import init_db
-from backend.api.routes.dashboard import router as dashboard_router
+from db.database import init_db
+from api.routes.dashboard import router as dashboard_router
 
 logging.basicConfig(
     level=logging.INFO,
