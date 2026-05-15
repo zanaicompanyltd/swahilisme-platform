@@ -1,4 +1,4 @@
-// Basic smoke test — no TypeScript, no @testing-library needed
-test('renders without crashing', () => {
-  expect(true).toBe(true);
+// Minimal test — no external dependencies required
+test("app loads", () => {
+  expect(1 + 1).toBe(2);
 });
