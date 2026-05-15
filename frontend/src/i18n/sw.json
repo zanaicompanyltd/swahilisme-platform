@@ -23,46 +23,45 @@
   "generateHealthCard": "Pakua Kadi ya Afya ya Biashara (PDF)",
 
   "dashboard": {
-    "title": "Dashibodi ya Biashara",
+    "refresh_btn": "Sasisha",
+    "refreshing": "Inasasisha...",
+    "refresh_tooltip": "Bonyeza kusasisha data kutoka kwa seva",
+    "title": "Dashibodi ya Takwimu",
+    "period_day": "Siku",
+    "period_week": "Wiki",
+    "period_month": "Mwezi",
+    "period_quarter": "Robo Mwaka",
     "revenue": "Mapato",
     "cost": "Gharama",
     "profit": "Faida",
     "loss": "Hasara",
     "transactions": "Miamala",
-    "margin": "Asilimia ya Faida",
-    "period_day": "Leo",
-    "period_week": "Wiki hii",
-    "period_month": "Mwezi huu",
-    "period_quarter": "Robo mwaka",
-    "trend_chart": "Mwelekeo wa Mapato, Gharama & Faida",
+    "trend_chart": "Mwenendo wa Fedha",
     "top_products": "Bidhaa Bora",
-    "spending": "Mchanganuo wa Matumizi",
+    "spending": "Mfumo wa Matumizi",
     "rank": "Nafasi",
     "product": "Bidhaa",
-    "units": "Vitengo",
-    "category": "Aina",
-    "amount": "Kiasi",
-    "percent": "Asilimia"
+    "category": "Kategoria",
+    "units": "Vipimo"
   },
-
-  "offline": {
-    "banner": "📵 Huna mtandao. Data imehifadhiwa na itasawazishwa baadaye.",
-    "syncing": "🔄 Inasawazisha...",
-    "synced": "✅ Data imesawazishwa"
+  "errors": {
+    "loading": "Inapakia data...",
+    "network": "Haiwezi kuunganisha na seva. Angalia muunganisho wako wa intaneti.",
+    "no_data": "Hakuna data ya kutosha kwa ajili ya kuonyesha",
+    "refresh_failed": "Imeshindwa kusasisha. Jaribu tena."
   },
-
   "health_card": {
     "title": "Kadi ya Afya ya Biashara",
-    "subtitle": "PDF kwa Maombi ya Mkopo",
-    "eligible": "🎉 Unastahili! Pakua Kadi yako",
-    "not_eligible": "Endelea kurekodi kwa siku {days} zaidi",
-    "download": "Pakua PDF",
-    "disclaimer": "Hii ni muhtasari wa data ya biashara yako kwa matumizi ya maombi ya mkopo. Haijakaguliwa na wakala wa serikali."
+    "eligible": "Hongera! Unastahiki kuomba Kadi ya Afya ya Biashara.",
+    "not_eligible": "Unahitaji siku {days} zaidi za data ili kustahiki.",
+    "download": "Pakua Kadi"
   },
-
-  "errors": {
-    "network": "Hitilafu ya mtandao. Tafadhali jaribu tena.",
-    "generic": "Kuna tatizo. Tafadhali jaribu tena.",
-    "loading": "Inapakia data yako..."
+  "offline": {
+    "banner": "📴 Hauna muunganisho. Data inaonyeshwa kutoka kwa kumbukumbu.",
+    "syncing": "🔄 Inasawazisha data..."
+  },
+  "app": {
+    "tagline": "Teknolojia kwa Lugha Yetu",
+    "subtitle": "Rahisisha biashara yako kwa Kiswahili"
   }
 }
