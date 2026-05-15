@@ -17,7 +17,7 @@ except ModuleNotFoundError:
 # ── Config ────────────────────────────────────────────────────────────────────
 DB_MODE     = os.getenv("DB_MODE", "sqlite")
 SQLITE_URL  = os.getenv("SQLITE_URL", "sqlite+aiosqlite:///./daftari.db")
-POSTGRES_URL = os.getenv("POSTGRES_URL", "")
+POSTGRES_URL = os.getenv("_URL", "")
 
 
 def _build_engine():
