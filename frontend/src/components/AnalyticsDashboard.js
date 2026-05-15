@@ -191,20 +191,24 @@ function AnalyticsDashboard({ userId = "demo-user-001" }) {
   const fetchAll = useCallback(async () => {
   setLoading(true);
   setError(null);
+  
   try {
+    const config = { timeout: 12000 };
+    
     const [sumRes, chartRes, prodRes, spendRes, healthRes] = await Promise.all([
-      axios.get(`${API}/api/v1/dashboard/summary?user_id=${userId}&period=${period}`),
-      axios.get(`${API}/api/v1/dashboard/revenue-cost-profit?user_id=${userId}`),
-      axios.get(`${API}/api/v1/dashboard/top-products?user_id=${userId}`),
-      axios.get(`${API}/api/v1/dashboard/spending-patterns?user_id=${userId}`),
-      axios.get(`${API}/api/v1/dashboard/health-card-status?user_id=${userId}`),
+      axios.get(`${API}/api/v1/dashboard/summary?user_id=${userId}&period=${period}`, config),
+      axios.get(`${API}/api/v1/dashboard/revenue-cost-profit?user_id=${userId}`, config),
+      axios.get(`${API}/api/v1/dashboard/top-products?user_id=${userId}`, config),
+      axios.get(`${API}/api/v1/dashboard/spending-patterns?user_id=${userId}`, config),
+      axios.get(`${API}/api/v1/dashboard/health-card-status?user_id=${userId}`, config),
     ]);
 
     setSummary(sumRes.data);
-    // Chart data transformation
+    
+    // Safe chart data transformation
     const labels = chartRes.data.labels || chartRes.data.days || [];
     setChartData(labels.map((day, i) => ({
-      day,
+      day: day || `Day ${i+1}`,
       [sw.dashboard.revenue]: chartRes.data.revenue?.[i] || 0,
       [sw.dashboard.cost]: chartRes.data.cost?.[i] || 0,
       [sw.dashboard.profit]: chartRes.data.profit?.[i] || 0,
@@ -215,10 +219,17 @@ function AnalyticsDashboard({ userId = "demo-user-001" }) {
     setHealthCard(healthRes.data);
 
   } catch (err) {
-    console.error("[Dashboard] Fetch error:", err);
-    setError("Haiwezi kupata data kutoka seva. Jaribu tena au tumia demo data.");
-    // Optional: Set some demo data so it doesn't look broken
-    setSummary({ total_revenue: 125000, total_cost: 58000, net_profit: 67000, transactions_count: 42 });
+    console.error("Dashboard fetch failed:", err);
+    setError("Haiwezi kupata data. Jaribu tena.");
+    
+    // Fallback demo data
+    setSummary({
+      total_revenue: 125000,
+      total_cost: 58000,
+      net_profit: 67000,
+      transactions_count: 42,
+      profit_margin: 53.6
+    });
   } finally {
     setLoading(false);
   }
