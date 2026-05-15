@@ -19,7 +19,7 @@ import {
 import sw from "../i18n/sw.json";
 
 // ── Config ───────────────────────────────────────────────────────────────────
-const API = process.env.REACT_APP_API_URL || "https://swahilisme-platform.up.railway.app";
+const API = process.env.REACT_APP_API_URL || "https://swahilisme-platform-production.up.railway.app";
 const COLORS = {
   primary:   "#005493",
   secondary: "#009973",
