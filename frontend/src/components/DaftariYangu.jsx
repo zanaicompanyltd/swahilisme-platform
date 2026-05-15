@@ -2,6 +2,8 @@
 // Main PWA Component for Module 1: Daftari Yangu
 // Swahili-first, offline-capable voice bookkeeping app
 
+// frontend/src/components/DaftariYangu.jsx
+
 import React, { useState, useEffect, useCallback } from "react";
 import {
   transcribeAudio,
@@ -16,9 +18,11 @@ import {
 import { useVoiceRecorder } from "../hooks/useVoiceRecorder";
 import sw from "../i18n/sw";
 
+// === UPDATE THIS LINE ===
+const API_BASE = process.env.REACT_APP_API_URL || "https://swahilisme-platform-production.up.railway.app";
+
 // ── User ID (persisted in localStorage) ──────────────────────────────────────
-const USER_ID =
-  localStorage.getItem("daftari_user_id") ||
+const USER_ID = localStorage.getItem("daftari_user_id") || 
   (() => {
     const id = "user_" + Math.random().toString(36).slice(2, 10);
     localStorage.setItem("daftari_user_id", id);
