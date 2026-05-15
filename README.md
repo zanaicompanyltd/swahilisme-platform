@@ -417,7 +417,7 @@ Every business that gains visibility into its finances is one step closer to for
 | **Email** | zda24m007@iitmz.ac.in |
 | **GitHub** | [@PatrickIIT](https://github.com/PatrickIIT) |
 | **Organisation** | ZanAI |
-| **Sponsor** | DASUC / IITM Zanzibar |
+| **Sponsor** | DASUC |
 
 ---
 
