@@ -1,6 +1,13 @@
 {
-  "short_name": "React App",
-  "name": "Create React App Sample",
+  "short_name": "SwahiliSME",
+  "name": "SwahiliSME Platform — Msaidizi wa Biashara",
+  "description": "AI-powered business management in Swahili for East African SMEs",
+  "lang": "sw",
+  "start_url": "/",
+  "display": "standalone",
+  "orientation": "portrait-primary",
+  "background_color": "#005493",
+  "theme_color": "#005493",
   "icons": [
     {
       "src": "favicon.ico",
@@ -10,16 +17,27 @@
     {
       "src": "logo192.png",
       "type": "image/png",
-      "sizes": "192x192"
+      "sizes": "192x192",
+      "purpose": "maskable"
     },
     {
       "src": "logo512.png",
       "type": "image/png",
-      "sizes": "512x512"
+      "sizes": "512x512",
+      "purpose": "any maskable"
     }
   ],
-  "start_url": ".",
-  "display": "standalone",
-  "theme_color": "#000000",
-  "background_color": "#ffffff"
+  "shortcuts": [
+    {
+      "name": "Rekodi Muamala",
+      "url": "/daftari",
+      "description": "Ongeza muamala mpya haraka"
+    },
+    {
+      "name": "Mshauri Wangu",
+      "url": "/mshauri",
+      "description": "Uliza swali la biashara"
+    }
+  ],
+  "categories": ["finance", "business", "productivity"]
 }
