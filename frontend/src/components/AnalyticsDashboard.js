@@ -177,11 +177,12 @@ function AnalyticsDashboard({ userId = "demo-user-001" }) {
   const [loading, setLoading]       = useState(true);
   const [error, setError]           = useState(null);
   const [isOnline, setIsOnline]     = useState(navigator.onLine);
+  const [isRefreshing, setIsRefreshing] = useState(false); // ← New: manual refresh state
 
   // Track online/offline
   useEffect(() => {
     const up   = () => setIsOnline(true);
-    const down = () => setIsOnline(false);
+    const down = () => setIsOffline(false);
     window.addEventListener("online",  up);
     window.addEventListener("offline", down);
     return () => { window.removeEventListener("online", up); window.removeEventListener("offline", down); };
@@ -190,6 +191,10 @@ function AnalyticsDashboard({ userId = "demo-user-001" }) {
   const fetchAll = useCallback(async () => {
     setLoading(true);
     setError(null);
+    
+    // Show refresh spinner only for manual refresh
+    if (isRefreshing) setIsRefreshing(true);
+    
     try {
       const [sumRes, chartRes, prodRes, spendRes, healthRes] = await Promise.all([
         axios.get(`${API}/api/v1/dashboard/summary?user_id=${userId}&period=${period}`, { timeout: 10000 }),
@@ -218,8 +223,9 @@ function AnalyticsDashboard({ userId = "demo-user-001" }) {
       setError(sw.errors.network || "Haiwezi kuunganisha na seva. Jaribu tena baadaye.");
     } finally {
       setLoading(false);
+      if (isRefreshing) setIsRefreshing(false);
     }
-  }, [userId, period, API]);
+  }, [userId, period, API, isRefreshing]); // ← Added isRefreshing to deps
 
   useEffect(() => { fetchAll(); }, [fetchAll]);
 
@@ -251,8 +257,8 @@ function AnalyticsDashboard({ userId = "demo-user-001" }) {
             {sw.app.tagline} • {sw.app.subtitle}
           </p>
 
-          {/* Period toggle */}
-          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+          {/* Period toggle + Refresh button */}
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
             {[
               { key: "day",     label: sw.dashboard.period_day },
               { key: "week",    label: sw.dashboard.period_week },
@@ -278,6 +284,50 @@ function AnalyticsDashboard({ userId = "demo-user-001" }) {
                 {label}
               </button>
             ))}
+            
+            {/* ➕ Refresh Button */}
+            <button 
+              onClick={fetchAll}
+              disabled={loading || isRefreshing}
+              style={{ 
+                padding: "6px 14px", 
+                background: (loading || isRefreshing) ? "rgba(255,255,255,0.3)" : "#fff", 
+                color: (loading || isRefreshing) ? "#aaa" : COLORS.primary,
+                borderRadius: 20, 
+                border: "2px solid rgba(255,255,255,0.3)", 
+                cursor: (loading || isRefreshing) ? "not-allowed" : "pointer",
+                fontFamily: "Georgia, serif",
+                fontSize: 13,
+                fontWeight: 600,
+                display: "flex",
+                alignItems: "center",
+                gap: 6,
+                transition: "all 0.2s ease",
+                boxShadow: "0 2px 8px rgba(0,0,0,0.1)",
+                marginLeft: 4,
+              }}
+              onMouseEnter={(e) => {
+                if (!loading && !isRefreshing) {
+                  e.currentTarget.style.transform = "translateY(-1px)";
+                  e.currentTarget.style.boxShadow = "0 4px 12px rgba(0,0,0,0.15)";
+                }
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.transform = "translateY(0)";
+                e.currentTarget.style.boxShadow = "0 2px 8px rgba(0,0,0,0.1)";
+              }}
+              title={sw.dashboard.refresh_tooltip || "Bonyeza kusasisha data"}
+            >
+              {(loading || isRefreshing) ? (
+                <span style={{ 
+                  display: "inline-block", 
+                  animation: "spin 1s linear infinite",
+                  fontSize: 14 
+                }}>🔄</span>
+              ) : "🔄"}
+              <span>{isRefreshing ? (sw.dashboard.refreshing || "Inasasisha...") : (sw.dashboard.refresh_btn || "Sasisha")}</span>
+              <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
+            </button>
           </div>
         </div>
 
@@ -285,7 +335,16 @@ function AnalyticsDashboard({ userId = "demo-user-001" }) {
         {error && <ErrorMessage message={error} onRetry={fetchAll} />}
 
         {/* Loading state */}
-        {loading && <LoadingSpinner />}
+        {loading && !isRefreshing && <LoadingSpinner />}
+
+        {/* Show mini spinner only for refresh */}
+        {isRefreshing && (
+          <div style={{ textAlign: "center", padding: 12, color: COLORS.primary, fontSize: 13 }}>
+            <span style={{ display: "inline-block", animation: "spin 1s linear infinite", marginRight: 6 }}>🔄</span>
+            {sw.dashboard.refreshing || "Inasasisha data..."}
+            <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
+          </div>
+        )}
 
         {!loading && !error && (
           <>
@@ -373,7 +432,7 @@ function AnalyticsDashboard({ userId = "demo-user-001" }) {
             <ChartCard>
               {topProducts.length === 0 ? (
                 <p style={{ textAlign: "center", color: "#aaa", padding: 24, fontFamily: "Georgia, serif" }}>
-                  {sw.errors.loading}
+                  {sw.errors.no_data || "Hakuna data ya bidhaa"}
                 </p>
               ) : (
                 <>
