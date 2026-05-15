@@ -12,7 +12,7 @@ try:
 except ModuleNotFoundError:
     import sys
     sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", ".."))
-    from backend.models.ledger import Base
+    from models.ledger import Base
 
 # ── Config ────────────────────────────────────────────────────────────────────
 DB_MODE     = os.getenv("DB_MODE", "sqlite")
