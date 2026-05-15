@@ -1,6 +1,6 @@
 """
 backend/api/app.py
-FastAPI application entrypoint for SwahiliSME - Daftari Yangu
+FastAPI application entrypoint for SwahiliSME Platform
 """
 # ── Path fix: MUST be the very first thing before ANY other import ────────────
 import os
@@ -22,7 +22,7 @@ except ImportError:
     pass
 
 from backend.db.database import init_db
-from backend.api.routes.daftari import router as daftari_router
+from backend.api.routes.dashboard import router as dashboard_router
 
 logging.basicConfig(
     level=logging.INFO,
@@ -33,7 +33,7 @@ logger = logging.getLogger(__name__)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    logger.info("SwahiliSME Daftari Yangu starting up...")
+    logger.info("SwahiliSME Platform starting up...")
     await init_db()
     db_mode = os.getenv("DB_MODE", "sqlite")
     logger.info(f"Database tables initialised - mode: {db_mode}")
@@ -42,9 +42,9 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(
-    title="SwahiliSME - Daftari Yangu API",
+    title="SwahiliSME Platform API",
     description=(
-        "Module 1: AI-powered voice bookkeeping for East African SMEs.\n\n"
+        "AI-powered Swahili business management for East African SMEs.\n\n"
         "Teknolojia kwa Lugha Yetu, Mafanikio kwa Biashara Zetu."
     ),
     version="1.0.0",
@@ -53,31 +53,30 @@ app = FastAPI(
     redoc_url="/redoc",
 )
 
-# CORS
-allowed_origins = os.getenv("ALLOWED_ORIGINS", "http://localhost:3000").split(",")
+# CORS - Allow your Vercel frontend
+ALLOWED_ORIGINS = os.getenv("ALLOWED_ORIGINS", "http://localhost:3000,https://swahilisme-platform.vercel.app,https://swahilisme-platform-ax7sue4i8-zanai.vercel.app,https://*.vercel.app")
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=allowed_origins,
+    allow_origins=[origin.strip() for origin in ALLOWED_ORIGINS.split(",")],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-# Routes
-app.include_router(daftari_router)
-
+# Register routes
+app.include_router(dashboard_router, prefix="/api/v1/dashboard", tags=["Dashboard"])
 
 @app.get("/", tags=["Health"])
 async def root():
     return {
-        "app": "SwahiliSME - Daftari Yangu",
+        "app": "SwahiliSME Platform",
         "version": "1.0.0",
         "status": "running",
         "db_mode": os.getenv("DB_MODE", "sqlite"),
         "docs": "/docs",
         "tagline": "Teknolojia kwa Lugha Yetu",
     }
-
 
 @app.get("/health", tags=["Health"])
 async def health():
