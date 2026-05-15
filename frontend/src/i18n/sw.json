@@ -1,0 +1,91 @@
+{
+  "app": {
+    "name": "SwahiliSME",
+    "tagline": "Teknolojia kwa Lugha Yetu",
+    "subtitle": "Mafanikio kwa Biashara Zetu"
+  },
+  "nav": {
+    "dashboard": "Dashibodi",
+    "daftari": "Daftari Yangu",
+    "mshauri": "Mshauri Wangu",
+    "reports": "Ripoti",
+    "settings": "Mipangilio",
+    "whatsapp": "WhatsApp"
+  },
+  "dashboard": {
+    "title": "Dashibodi ya Biashara",
+    "revenue": "Mapato",
+    "cost": "Gharama",
+    "profit": "Faida",
+    "loss": "Hasara",
+    "transactions": "Miamala",
+    "margin": "Asilimia ya Faida",
+    "period_day": "Leo",
+    "period_week": "Wiki hii",
+    "period_month": "Mwezi huu",
+    "period_quarter": "Robo mwaka",
+    "trend_chart": "Mwelekeo wa Mapato, Gharama & Faida",
+    "top_products": "Bidhaa Bora",
+    "spending": "Mchanganuo wa Matumizi",
+    "rank": "Nafasi",
+    "product": "Bidhaa",
+    "units": "Vitengo",
+    "category": "Aina",
+    "amount": "Kiasi",
+    "percent": "Asilimia"
+  },
+  "daftari": {
+    "title": "Daftari Yangu",
+    "subtitle": "Rekodi Muamala kwa Sauti",
+    "tap_to_speak": "Bonyeza Kusema",
+    "listening": "Ninakusikiliza...",
+    "processing": "Inachakata...",
+    "confirm": "Thibitisha Muamala",
+    "revenue_label": "Mapato",
+    "cost_label": "Gharama",
+    "profit_label": "Faida",
+    "category": "Aina ya Muamala",
+    "example": "Mfano: \"Niliuza samaki mia tatu, gharama ilikuwa mia moja\""
+  },
+  "mshauri": {
+    "title": "Mshauri Wangu",
+    "subtitle": "Uliza Swali la Biashara",
+    "placeholder": "Uliza swali lako la TRA, BRELA, au SIDO...",
+    "send": "Tuma",
+    "thinking": "Nafikiri...",
+    "disclaimer": "⚠️ Jibu hili limetolewa na AI. Thibitisha na ofisi husika.",
+    "escalate": "Pata Msaidizi wa Binadamu",
+    "escalating": "Tunakupeleka kwa mtaalamu...",
+    "example_questions": [
+      "Nahitaji leseni gani kuuza nguo mitumba?",
+      "TRA inataka nini kutoka kwangu?",
+      "Naweza kupata mkopo wa serikali?"
+    ]
+  },
+  "whatsapp": {
+    "title": "Muhtasari wa WhatsApp",
+    "enable": "Wezesha Muhtasari wa Wiki",
+    "enabled": "✅ Muhtasari utumwa kila Jumapili",
+    "frequency": "Mara ngapi?",
+    "weekly": "Kila wiki",
+    "biweekly": "Kila wiki mbili"
+  },
+  "health_card": {
+    "title": "Kadi ya Afya ya Biashara",
+    "subtitle": "PDF kwa Maombi ya Mkopo",
+    "eligible": "🎉 Unastahili! Pakua Kadi yako",
+    "not_eligible": "Endelea kurekodi kwa siku {days} zaidi",
+    "download": "Pakua PDF",
+    "disclaimer": "Hii ni muhtasari wa data ya biashara yako kwa matumizi ya maombi ya mkopo. Haijakaguliwa na wakala wa serikali."
+  },
+  "offline": {
+    "banner": "📵 Huna mtandao. Data imehifadhiwa na itasawazishwa baadaye.",
+    "syncing": "🔄 Inasawazisha...",
+    "synced": "✅ Data imesawazishwa"
+  },
+  "errors": {
+    "network": "Hitilafu ya mtandao. Tafadhali jaribu tena.",
+    "generic": "Kuna tatizo. Tafadhali jaribu tena.",
+    "loading": "Inapakia data yako..."
+  }
+}
