@@ -19,7 +19,7 @@
 |---------|-----|
 | **Frontend (Vercel)** | https://swahilisme-platform.vercel.app |
 | **Backend API (Railway)** | https://swahilisme-platform-production.up.railway.app/ |
-| **API Docs (Swagger)** | https://swahilisme-platform-production.up.railway.app//docs |
+| **API Docs (Swagger)** | https://swahilisme-platform-production.up.railway.app/docs |
 | **Database (Supabase)** | https://supabase.com/dashboard/org/tfegkxauyfsscdmwsuxn |
 
 ---
