@@ -2,7 +2,7 @@
 backend/services/asr/whisper_service.py
 1.3.1 – ASR Integration using Groq Whisper Large V3 Turbo (free, fast)
 
-No local model needed. Works perfectly for deployment.
+No local model needed. Works perfectly for deployment. this allows to support different formats
 Supported formats: mp3, wav, m4a, ogg, webm
 """
 import os
