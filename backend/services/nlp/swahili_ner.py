@@ -4,7 +4,7 @@ backend/services/nlp/swahili_ner.py
 
 Two-step pipeline:
   1. Clean/correct noisy Whisper transcript → store as description
-  2. Extract ALL transactions from clean text
+  2. Extract ALL transactions from clean text to make sure it works
 """
 import re
 import os
