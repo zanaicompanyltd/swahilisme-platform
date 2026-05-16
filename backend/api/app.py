@@ -3,6 +3,10 @@ SwahiliSME Platform — FastAPI Backend
 Registers: dashboard (1.6), daftari (1.3), health
 """
 import os
+import os
+import sys
+import logging  # ← add this line
+from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from api.routes import dashboard, daftari

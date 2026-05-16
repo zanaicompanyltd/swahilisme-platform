@@ -1,105 +1,49 @@
 """
-1.3 Module 1: Daftari Yangu — Backend Routes
-FIXES: INTERVAL f-string, SSL for Supabase connection
+backend/api/routes/daftari.py
+REST API routes for Module 1: Daftari Yangu
+
+Merged version: keeps YOUR async SQLAlchemy backend + HIS fixes for
+INTERVAL f-string, health card PDF, top-products, spending, and sync.
+
+Endpoints:
+  POST /api/v1/daftari/transcribe          - Upload audio -> ASR -> NLP
+  POST /api/v1/daftari/transactions        - Create transaction
+  GET  /api/v1/daftari/transactions        - List transactions
+  DELETE /api/v1/daftari/transactions/{id} - Delete transaction
+  GET  /api/v1/daftari/summary             - Summary stats
+  GET  /api/v1/daftari/top-products        - Top products
+  GET  /api/v1/daftari/spending            - Spending by category
+  POST /api/v1/daftari/sync                - Flush offline sync queue
+  GET  /api/v1/daftari/sync/status         - Sync status
+  GET  /api/v1/daftari/health-card         - Generate Business Health Card PDF
 """
-from fastapi import APIRouter, UploadFile, File, Form, Query, HTTPException
-from fastapi.responses import StreamingResponse
-from pydantic import BaseModel
-from typing import Optional
+# ── Path fix ──────────────────────────────────────────────────────────────────
+import os
+import sys
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))))
+# ─────────────────────────────────────────────────────────────────────────────
+
+import io
 from datetime import datetime
-import os, io, json
+from typing import Optional
 
-from api.routes.dashboard import query_db, scalar_db, get_db
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile
+from fastapi.responses import Response, StreamingResponse
+from pydantic import BaseModel, Field
+from sqlalchemy import select, text
+from sqlalchemy.ext.asyncio import AsyncSession
 
-router = APIRouter()
+from backend.db.database import get_db
+from backend.models.ledger import TransactionCategory, TransactionType, User
+from backend.services.asr.whisper_service import get_asr_service
+from backend.services.nlp.swahili_ner import get_nlp_service
+from backend.services import ledger_service
+from backend.services.pdf.health_card import generate_health_card
 
-
-# ── Pydantic models ───────────────────────────────────────────────────────────
-
-class TransactionIn(BaseModel):
-    user_id:          str
-    type:             str
-    category:         str
-    amount:           float
-    description:      Optional[str]   = None
-    transaction_date: Optional[str]   = None
-    source:           Optional[str]   = "manual"
-    raw_transcript:   Optional[str]   = None
-    nlp_confidence:   Optional[float] = None
-    product_name:     Optional[str]   = None
-    quantity:         Optional[float] = None
-    nlp_entities:     Optional[dict]  = None
+router = APIRouter(prefix="/api/v1/daftari", tags=["Daftari Yangu"])
 
 
-# ── 1.3.3 CREATE transaction ──────────────────────────────────────────────────
-
-@router.post("/transactions")
-async def create_transaction(tx: TransactionIn):
-    """Save a transaction to Supabase."""
-    try:
-        conn = get_db()
-        if not conn:
-            raise HTTPException(status_code=503, detail="Database unavailable")
-
-        cur = conn.cursor()
-        cur.execute("""
-            INSERT INTO transactions (
-                user_id, type, category, amount, description,
-                transaction_date, source, raw_transcript, nlp_confidence,
-                product_name, quantity, is_synced
-            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, true)
-            RETURNING id, user_id, type, category, amount, description,
-                      transaction_date, source, is_synced, created_at
-        """, (
-            tx.user_id, tx.type, tx.category, tx.amount,
-            tx.description,
-            tx.transaction_date or datetime.now().date().isoformat(),
-            tx.source, tx.raw_transcript, tx.nlp_confidence,
-            tx.product_name, tx.quantity,
-        ))
-        row = dict(cur.fetchone())
-        conn.commit()
-        conn.close()
-
-        # Serialise date fields
-        for k in ("transaction_date", "created_at"):
-            if k in row and hasattr(row[k], "isoformat"):
-                row[k] = row[k].isoformat()
-
-        return row
-
-    except HTTPException:
-        raise
-    except Exception as e:
-        print(f"[Daftari] Create error: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-# ── 1.3.3 LIST transactions ───────────────────────────────────────────────────
-
-@router.get("/transactions")
-async def list_transactions(
-    user_id: str,
-    limit:   int = Query(30, ge=1, le=200),
-    offset:  int = 0,
-    type:    Optional[str] = None,
-):
-    """List user's transactions, newest first."""
-    # FIX: LIMIT and OFFSET use f-string, not %s
-    base_sql = """
-        SELECT id, user_id, type, category, amount, description,
-               transaction_date, source, product_name, quantity,
-               is_synced, created_at
-        FROM transactions
-        WHERE user_id = %s
-    """
-    params = [user_id]
-
-    if type:
-        base_sql += " AND type = %s"
-        params.append(type)
-
-# ── Updated TranscribeResponse schema (replace in daftari.py) ────────────────
+# ── Pydantic schemas ──────────────────────────────────────────────────────────
 
 class TranscribeResponse(BaseModel):
     transcript: str           # cleaned transcript (corrected by Groq)
@@ -110,220 +54,50 @@ class TranscribeResponse(BaseModel):
     nlp: dict
 
 
-# ── Updated transcribe endpoint (replace in daftari.py) ─────────────────────
-    base_sql += f" ORDER BY transaction_date DESC, created_at DESC LIMIT {limit} OFFSET {offset}"
-
-    rows = query_db(base_sql, tuple(params))
-
-    for r in rows:
-        for k in ("transaction_date", "created_at"):
-            if k in r and hasattr(r[k], "isoformat"):
-                r[k] = r[k].isoformat()
-
-    return rows
-
-
-# ── 1.3.3 DELETE transaction ──────────────────────────────────────────────────
-
-@router.delete("/transactions/{tx_id}")
-async def delete_transaction(tx_id: str, user_id: str):
-    """Delete a transaction owned by the user."""
-    try:
-        conn = get_db()
-        if not conn:
-            raise HTTPException(status_code=503, detail="Database unavailable")
-        cur = conn.cursor()
-        cur.execute(
-            "DELETE FROM transactions WHERE id::text = %s AND user_id = %s RETURNING id",
-            (tx_id, user_id)
-        )
-        deleted = cur.fetchone()
-        conn.commit()
-        conn.close()
-        if not deleted:
-            raise HTTPException(status_code=404, detail="Transaction not found")
-        return {"deleted": True, "id": tx_id}
-    except HTTPException:
-        raise
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+class CreateTransactionRequest(BaseModel):
+    user_id: str
+    type: TransactionType
+    category: TransactionCategory
+    amount: float = Field(gt=0)
+    description: str = ""
+    transaction_date: Optional[datetime] = None
+    source: str = "manual"
+    raw_transcript: Optional[str] = None
+    nlp_confidence: Optional[float] = None
+    product_name: Optional[str] = None
+    quantity: Optional[float] = None
+    unit_price: Optional[float] = None
+    nlp_entities: Optional[dict] = None
+    local_id: Optional[str] = None
 
 
-# ── 1.3.3 SUMMARY ─────────────────────────────────────────────────────────────
+# ── 1.3.1 + 1.3.2  Transcribe + NLP ─────────────────────────────────────────
 
-@router.get("/summary")
-async def get_summary(user_id: str, days: int = Query(30, ge=1)):
-    """Revenue/cost/profit summary for Daftari muhtasari tab."""
-    # FIX: f-string for INTERVAL
-    sql = f"""
-        SELECT
-            COALESCE(SUM(CASE WHEN type='mapato'  THEN amount ELSE 0 END), 0) AS revenue,
-            COALESCE(SUM(CASE WHEN type='gharama' THEN amount ELSE 0 END), 0) AS cost,
-            COUNT(*) AS tx_count
-        FROM transactions
-        WHERE user_id = %s
-          AND transaction_date >= CURRENT_DATE - INTERVAL '{days} days'
-    """
-    rows = query_db(sql, (user_id,))
-
-    if rows:
-        r       = rows[0]
-        revenue = float(r.get("revenue", 0) or 0)
-        cost    = float(r.get("cost",    0) or 0)
-        profit  = revenue - cost
-        margin  = round((profit / revenue) * 100, 1) if revenue else 0
-        return {
-            "total_revenue":      revenue,
-            "total_cost":         cost,
-            "net_profit":         profit,
-            "profit_margin":      margin,
-            "transactions_count": int(r.get("tx_count", 0) or 0),
-            "days":               days,
-        }
-
-    return {
-        "total_revenue": 0, "total_cost": 0, "net_profit": 0,
-        "profit_margin": 0, "transactions_count": 0, "days": days,
-    }
-
-
-# ── 1.3.1 ASR — Whisper transcription ────────────────────────────────────────
-
-@router.post("/transcribe")
+@router.post("/transcribe", response_model=TranscribeResponse,
+             summary="Rekodi sauti -> maandishi (ASR + NLP)")
 async def transcribe_audio(
     user_id: str = Form(...),
     audio: UploadFile = File(...),
 ):
-    """
-    1.3.1 — Whisper ASR + GPT NLP extraction.
-    Falls back to mock if OPENAI_API_KEY not set.
-    """
-    api_key = os.getenv("OPENAI_API_KEY", "")
+    audio_bytes = await audio.read()
+    if len(audio_bytes) == 0:
+        raise HTTPException(400, "Faili la sauti liko tupu / Audio file is empty")
 
-    if not api_key:
-        return {
-            "transcript": "Niliuza samaki mia tatu, gharama ilikuwa mia moja",
-            "nlp": {
-                "transaction_type": "mapato",
-                "amount":           300,
-                "cost_amount":      100,
-                "category":         "mauzo",
-                "product_name":     "samaki",
-                "quantity":         None,
-                "transaction_date": datetime.now().date().isoformat(),
-                "confidence":       0.91,
-                "warnings":         [],
-            },
-            "demo": True,
-        }
-
+    asr = get_asr_service()
     try:
-        import openai
-        client      = openai.OpenAI(api_key=api_key)
-        audio_bytes = await audio.read()
-        audio_file  = io.BytesIO(audio_bytes)
-        audio_file.name = audio.filename or "audio.webm"
+        asr_result = await asr.transcribe(audio_bytes, filename=audio.filename or "audio.webm")
+    except RuntimeError as e:
+        raise HTTPException(500, str(e))
 
-        transcript = client.audio.transcriptions.create(
-            model="whisper-1",
-            file=audio_file,
-            language="sw",
-            response_format="text",
-        ).strip()
-
-        nlp_resp = client.chat.completions.create(
-            model="gpt-4o-mini",
-            response_format={"type": "json_object"},
-            messages=[
-                {
-                    "role": "system",
-                    "content": (
-                        "You are a Swahili business transaction parser. "
-                        "Extract structured data from Swahili text. "
-                        "Return ONLY JSON with: transaction_type (mapato|gharama), "
-                        "amount (number), category (string), product_name (string or null), "
-                        "quantity (number or null), transaction_date (YYYY-MM-DD), "
-                        "confidence (0.0-1.0), warnings (array). "
-                        "Today: " + datetime.now().date().isoformat()
-                    ),
-                },
-                {"role": "user", "content": transcript},
-            ],
-        )
-        nlp_data = json.loads(nlp_resp.choices[0].message.content)
-        return {"transcript": transcript, "nlp": nlp_data}
-
-    except Exception as e:
-        print(f"[ASR Error] {e}")
-        raise HTTPException(status_code=500, detail=f"Transcription failed: {str(e)}")
-
-
-# ── 1.3.3 Offline sync ───────────────────────────────────────────────────────
-
-@router.post("/sync")
-async def sync_offline(user_id: str):
-    return {"status": "ok", "message": "Sync endpoint ready"}
-
-
-@router.get("/sync/status")
-async def sync_status(user_id: str):
-    count = scalar_db(
-        "SELECT COUNT(*) FROM transactions WHERE user_id = %s AND is_synced = false",
-        (user_id,), default=0
-    )
-    return {"is_synced": int(count) == 0, "pending_count": int(count)}
-
-
-# ── 1.3.4 Business Health Card PDF ───────────────────────────────────────────
-
-@router.get("/health-card")
-async def generate_health_card(
-    user_id: str,
-    days: int = Query(90, ge=30),
-):
-    """1.3.4 — Generate Business Health Card PDF (reportlab)."""
-    try:
-        from reportlab.lib.pagesizes import A4
-        from reportlab.lib import colors
-        from reportlab.lib.units import cm
-        from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
-        from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
-
-        # FIX: f-string for INTERVAL
-        summary_rows = query_db(f"""
-            SELECT
-                COALESCE(SUM(CASE WHEN type='mapato'  THEN amount ELSE 0 END), 0) AS revenue,
-                COALESCE(SUM(CASE WHEN type='gharama' THEN amount ELSE 0 END), 0) AS cost,
-                COUNT(*) AS tx_count,
-                MIN(transaction_date) AS first_date
-            FROM transactions
-            WHERE user_id = %s
-              AND transaction_date >= CURRENT_DATE - INTERVAL '{days} days'
-        """, (user_id,))
-
-        user_rows = query_db(
-            "SELECT name, business_name, business_type FROM users WHERE id = %s",
-            (user_id,)
-        )
-
-        s       = summary_rows[0] if summary_rows else {}
-        u       = user_rows[0]    if user_rows    else {}
-        revenue = float(s.get("revenue", 0) or 0)
-        cost    = float(s.get("cost",    0) or 0)
-        profit  = revenue - cost
-        margin  = round((profit / revenue) * 100, 1) if revenue else 0
-
-        buffer = io.BytesIO()
-        doc    = SimpleDocTemplate(buffer, pagesize=A4, topMargin=2*cm)
-        styles = getSampleStyleSheet()
-        story  = []
+    nlp = get_nlp_service()
+    nlp_result = nlp.extract(asr_result.transcript)
 
     # nlp_result.description holds the CLEANED transcript from Groq
     cleaned_transcript = nlp_result.description if nlp_result.description else asr_result.transcript
 
     return TranscribeResponse(
-        transcript=cleaned_transcript,           # ← show cleaned version
-        raw_transcript=asr_result.transcript,    # ← keep original for debugging
+        transcript=cleaned_transcript,
+        raw_transcript=asr_result.transcript,
         language=asr_result.language,
         confidence=asr_result.confidence,
         duration_seconds=asr_result.duration_seconds,
@@ -336,65 +110,146 @@ async def generate_health_card(
             "quantity":         nlp_result.quantity,
             "confidence":       nlp_result.confidence,
             "warnings":         nlp_result.warnings,
-            "all_transactions": nlp_result.all_transactions,  # ← all found transactions
+            "all_transactions": getattr(nlp_result, "all_transactions", []),
         },
     )
+
+
 # ── 1.3.3  Ledger CRUD ────────────────────────────────────────────────────────
 
-        disclaimer = (
-            "<i>Hii ni muhtasari wa data ya biashara yako kwa matumizi ya maombi ya mkopo. "
-            "Haijakaguliwa na wakala wa serikali.</i>"
-        )
-        story.append(Paragraph(disclaimer, styles["Normal"]))
-        story.append(Spacer(1, 0.4*cm))
-        story.append(Paragraph(
-            "<b>SwahiliSME Platform</b> • DASUC 2026 • Teknolojia kwa Lugha Yetu",
-            styles["Normal"],
-        ))
+@router.post("/transactions", summary="Ongeza muamala mpya (Create transaction)")
+async def create_transaction(
+    req: CreateTransactionRequest,
+    db: AsyncSession = Depends(get_db),
+):
+    await ledger_service.get_or_create_user(db, req.user_id)
+    tx = await ledger_service.create_transaction(
+        db=db,
+        user_id=req.user_id,
+        tx_type=req.type,
+        category=req.category,
+        amount=req.amount,
+        description=req.description,
+        transaction_date=req.transaction_date,
+        source=req.source,
+        raw_transcript=req.raw_transcript,
+        nlp_confidence=req.nlp_confidence,
+        product_name=req.product_name,
+        quantity=req.quantity,
+        unit_price=req.unit_price,
+        nlp_entities=req.nlp_entities,
+        local_id=req.local_id,
+    )
+    return {
+        "id":        tx.id,
+        "status":    "created",
+        "amount":    tx.amount,
+        "revenue":   tx.revenue,
+        "cost":      tx.cost,
+        "profit":    tx.profit,
+        "type":      tx.type.value,
+        "category":  tx.category.value,
+        "timestamp": tx.timestamp.isoformat(),
+        "is_synced": tx.is_synced,
+    }
 
-        doc.build(story)
-        buffer.seek(0)
 
-        filename = f"kadi-afya-{user_id}-{datetime.now().date()}.pdf"
-        return StreamingResponse(
-            buffer,
-            media_type="application/pdf",
-            headers={"Content-Disposition": f"attachment; filename={filename}"},
-        )
+@router.get("/transactions", summary="Orodha ya miamala (List transactions)")
+async def list_transactions(
+    user_id: str = Query(...),
+    limit: int = Query(50, ge=1, le=200),
+    offset: int = Query(0, ge=0),
+    type: Optional[TransactionType] = Query(None),
+    category: Optional[TransactionCategory] = Query(None),
+    date_from: Optional[datetime] = Query(None),
+    date_to: Optional[datetime] = Query(None),
+    db: AsyncSession = Depends(get_db),
+):
+    txs = await ledger_service.get_transactions(
+        db, user_id, limit, offset, type, category, date_from, date_to
+    )
+    return [
+        {
+            "id":               t.id,
+            "type":             t.type.value,
+            "category":         t.category.value,
+            "amount":           t.amount,
+            "revenue":          t.revenue,
+            "cost":             t.cost,
+            "profit":           t.profit,
+            "description":      t.description,
+            "transaction_date": t.timestamp.isoformat(),
+            "source":           t.source.value if t.source else "manual",
+            "product_name":     t.product_name,
+            "quantity":         t.quantity,
+            "nlp_confidence":   t.nlp_confidence,
+            "is_synced":        t.is_synced,
+            "created_at":       t.created_at.isoformat(),
+        }
+        for t in txs
+    ]
 
-    except ImportError:
-        raise HTTPException(status_code=501, detail="reportlab not installed")
-    except Exception as e:
-        print(f"[PDF Error] {e}")
-        raise HTTPException(status_code=500, detail=f"PDF generation failed: {str(e)}")
+
+@router.delete("/transactions/{tx_id}", summary="Futa muamala (Delete transaction)")
+async def delete_transaction(
+    tx_id: str,
+    user_id: str = Query(...),
+    db: AsyncSession = Depends(get_db),
+):
+    deleted = await ledger_service.delete_transaction(db, tx_id, user_id)
+    if not deleted:
+        raise HTTPException(404, "Muamala haujapatikana / Transaction not found")
+    return {"status": "deleted", "id": tx_id}
 
 
-# ── Daftari top-products + spending ──────────────────────────────────────────
+# ── Summary ───────────────────────────────────────────────────────────────────
 
-@router.get("/top-products")
-async def get_top_products(user_id: str, days: int = 30):
-    sql = f"""
+@router.get("/summary", summary="Muhtasari wa biashara (Business summary)")
+async def get_summary(
+    user_id: str = Query(...),
+    days: int = Query(30, ge=1, le=365),
+    db: AsyncSession = Depends(get_db),
+):
+    return await ledger_service.get_summary(db, user_id, days)
+
+
+@router.get("/top-products", summary="Bidhaa bora (Top products)")
+async def get_top_products(
+    user_id: str = Query(...),
+    days: int = Query(30, ge=1, le=365),
+    limit: int = Query(5, ge=1, le=20),
+    db: AsyncSession = Depends(get_db),
+):
+    # HIS fix: use f-string for INTERVAL in raw SQL
+    sql = text(f"""
         SELECT COALESCE(product_name, category, 'Nyingine') AS name,
                SUM(amount) AS revenue
         FROM transactions
-        WHERE user_id = %s AND type = 'mapato'
+        WHERE user_id = :user_id AND type = 'mapato'
           AND transaction_date >= CURRENT_DATE - INTERVAL '{days} days'
-        GROUP BY name ORDER BY revenue DESC LIMIT 5
-    """
-    rows = query_db(sql, (user_id,))
+        GROUP BY name ORDER BY revenue DESC LIMIT {limit}
+    """)
+    result = await db.execute(sql, {"user_id": user_id})
+    rows = result.mappings().all()
     return [{"name": r["name"], "revenue": float(r["revenue"])} for r in rows]
 
 
-@router.get("/spending")
-async def get_spending(user_id: str, days: int = 30):
-    sql = f"""
+@router.get("/spending", summary="Gharama kwa aina (Spending by category)")
+async def get_spending(
+    user_id: str = Query(...),
+    days: int = Query(30, ge=1, le=365),
+    db: AsyncSession = Depends(get_db),
+):
+    # HIS fix: use f-string for INTERVAL in raw SQL
+    sql = text(f"""
         SELECT COALESCE(category, 'Nyingine') AS category, SUM(amount) AS amount
         FROM transactions
-        WHERE user_id = %s AND type = 'gharama'
+        WHERE user_id = :user_id AND type = 'gharama'
           AND transaction_date >= CURRENT_DATE - INTERVAL '{days} days'
         GROUP BY category ORDER BY amount DESC
-    """
-    rows  = query_db(sql, (user_id,))
+    """)
+    result = await db.execute(sql, {"user_id": user_id})
+    rows = result.mappings().all()
     total = sum(float(r["amount"]) for r in rows) or 1
     return [
         {
@@ -404,3 +259,150 @@ async def get_spending(user_id: str, days: int = 30):
         }
         for r in rows
     ]
+
+
+# ── Sync ──────────────────────────────────────────────────────────────────────
+
+@router.post("/sync", summary="Sawazisha miamala (Sync offline queue)")
+async def sync_transactions(
+    user_id: str,
+    db: AsyncSession = Depends(get_db),
+):
+    pending = await ledger_service.get_pending_sync_count(db, user_id)
+    if pending == 0:
+        return {"status": "ok", "synced": 0, "message": "Hakuna data inayohitaji kusawazishwa"}
+    result = await ledger_service.flush_sync_queue(db, user_id)
+    return {"status": "ok", **result}
+
+
+@router.get("/sync/status", summary="Hali ya usawazishaji (Sync status)")
+async def sync_status(
+    user_id: str = Query(...),
+    db: AsyncSession = Depends(get_db),
+):
+    pending = await ledger_service.get_pending_sync_count(db, user_id)
+    return {
+        "pending_sync": pending,
+        "is_synced":    pending == 0,
+        "message":      "Imesawazishwa" if pending == 0 else f"Miamala {pending} inasubiri kusawazishwa",
+    }
+
+
+# ── 1.3.4  Health Card PDF ────────────────────────────────────────────────────
+
+@router.get("/health-card", summary="Tengeneza Kadi ya Afya ya Biashara (PDF)")
+async def get_health_card(
+    user_id: str = Query(...),
+    days: int = Query(90, ge=30, le=365),
+    db: AsyncSession = Depends(get_db),
+):
+    # Try YOUR service first (generate_health_card from pdf module)
+    user_q = select(User).where(User.id == user_id)
+    user = (await db.execute(user_q)).scalar_one_or_none()
+
+    if not user:
+        raise HTTPException(404, "Mtumiaji hajapatikana. Kwanza ingiza muamala mmoja.")
+
+    summary      = await ledger_service.get_summary(db, user_id, days)
+    top_products = await ledger_service.get_top_products(db, user_id, days)
+    spending     = await ledger_service.get_spending_by_category(db, user_id, days)
+
+    try:
+        pdf_bytes = generate_health_card(
+            business_name=user.business_name,
+            owner_name=user.name,
+            summary=summary,
+            top_products=top_products,
+            spending_by_category=spending,
+            transactions_count=summary["transactions_count"],
+            days=days,
+            phone=user.phone,
+        )
+    except Exception:
+        # HIS fallback: build PDF inline with reportlab if service fails
+        pdf_bytes = _generate_health_card_fallback(user, summary, days)
+
+    filename = (
+        f"kadi-afya-{user.business_name.replace(' ', '-').lower()}"
+        f"-{datetime.utcnow().strftime('%Y%m%d')}.pdf"
+    )
+    return Response(
+        content=pdf_bytes,
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
+def _generate_health_card_fallback(user, summary: dict, days: int) -> bytes:
+    """HIS inline reportlab PDF as fallback."""
+    try:
+        from reportlab.lib.pagesizes import A4
+        from reportlab.lib import colors
+        from reportlab.lib.units import cm
+        from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
+        from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+
+        revenue = float(summary.get("total_revenue", 0) or 0)
+        cost    = float(summary.get("total_cost",    0) or 0)
+        profit  = revenue - cost
+        margin  = round((profit / revenue) * 100, 1) if revenue else 0
+
+        buffer = io.BytesIO()
+        doc    = SimpleDocTemplate(buffer, pagesize=A4, topMargin=2*cm)
+        styles = getSampleStyleSheet()
+        green  = colors.HexColor("#1a6b3a")
+
+        title_style = ParagraphStyle(
+            "Title", parent=styles["Title"],
+            textColor=green, fontSize=20, spaceAfter=6,
+        )
+
+        story = [
+            Paragraph("Kadi ya Afya ya Biashara", title_style),
+            Paragraph("Business Health Card — SwahiliSME Platform", styles["Normal"]),
+            Spacer(1, 0.5*cm),
+            Paragraph(f"<b>Jina la Biashara:</b> {user.business_name}", styles["Normal"]),
+            Paragraph(f"<b>Mmiliki:</b> {user.name}", styles["Normal"]),
+            Paragraph(f"<b>Kipindi:</b> Siku {days} zilizopita", styles["Normal"]),
+            Paragraph(f"<b>Tarehe:</b> {datetime.now().date()}", styles["Normal"]),
+            Spacer(1, 0.5*cm),
+        ]
+
+        data = [
+            ["Kiashiria",        "Kiasi (TZS)"],
+            ["Mapato (Jumla)",    f"{revenue:,.0f}"],
+            ["Gharama (Jumla)",   f"{cost:,.0f}"],
+            ["Faida Halisi",      f"{profit:,.0f}"],
+            ["Asilimia Faida",    f"{margin}%"],
+            ["Idadi ya Miamala",  str(int(summary.get("transactions_count", 0) or 0))],
+        ]
+        tbl = Table(data, colWidths=[9*cm, 6*cm])
+        tbl.setStyle(TableStyle([
+            ("BACKGROUND",    (0,0), (-1,0),  green),
+            ("TEXTCOLOR",     (0,0), (-1,0),  colors.white),
+            ("FONTNAME",      (0,0), (-1,0),  "Helvetica-Bold"),
+            ("FONTSIZE",      (0,0), (-1,-1), 11),
+            ("ROWBACKGROUNDS",(0,1), (-1,-1), [colors.white, colors.HexColor("#f0f9f4")]),
+            ("GRID",          (0,0), (-1,-1), 0.5, colors.HexColor("#d1fae5")),
+            ("LEFTPADDING",   (0,0), (-1,-1), 10),
+            ("TOPPADDING",    (0,0), (-1,-1), 6),
+            ("BOTTOMPADDING", (0,0), (-1,-1), 6),
+        ]))
+        story.append(tbl)
+        story.append(Spacer(1, 1*cm))
+        story.append(Paragraph(
+            "<i>Hii ni muhtasari wa data ya biashara yako kwa matumizi ya maombi ya mkopo.</i>",
+            styles["Normal"],
+        ))
+        story.append(Spacer(1, 0.4*cm))
+        story.append(Paragraph(
+            "<b>SwahiliSME Platform</b> • DASUC 2026 • Teknolojia kwa Lugha Yetu",
+            styles["Normal"],
+        ))
+
+        doc.build(story)
+        buffer.seek(0)
+        return buffer.read()
+
+    except ImportError:
+        raise HTTPException(501, "reportlab not installed. Run: pip install reportlab")
