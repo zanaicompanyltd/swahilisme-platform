@@ -1,129 +1,143 @@
 """
 backend/services/asr/whisper_service.py
-1.3.1 – ASR Integration (OpenAI Whisper / Tanzanian Swahili)
+1.3.1 – ASR Integration using Groq Whisper Large V3 Turbo (free, fast)
 
-Handles:
-  • Audio upload → Whisper transcription (language="sw")
-  • Confidence scoring via log-probability average
-  • Fallback mock for offline / test environments
-  • Supported formats: mp3, wav, m4a, ogg, webm (from PWA MediaRecorder)
+No local model needed. Works perfectly for deployment.
+Supported formats: mp3, wav, m4a, ogg, webm
 """
 import os
-import io
 import logging
+import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
-# Supported audio MIME types from browser MediaRecorder
-SUPPORTED_TYPES = {
-    "audio/webm", "audio/webm;codecs=opus",
-    "audio/ogg", "audio/ogg;codecs=opus",
-    "audio/mp4", "audio/mpeg",
-    "audio/wav", "audio/x-wav",
-}
+MAX_AUDIO_SIZE_MB = 25
 
-MAX_AUDIO_SIZE_MB = 25  # Whisper API limit
+# Short vocabulary hint only — no instructions (instructions leak into transcript)
+SWAHILI_PROMPT = (
+    "biashara, mauzo, gharama, mapato, shilingi, elfu, "
+    "nimenunua, nimeuza, nililipa, malighafi, kodi, mshahara"
+)
 
 
 @dataclass
 class ASRResult:
     transcript: str
     language: str
-    confidence: float          # 0.0 – 1.0 (estimated from avg log-prob)
+    confidence: float
     duration_seconds: float
-    segments: list             # Raw Whisper segments for debugging
+    segments: list
 
 
 class WhisperASRService:
     """
-    Wraps OpenAI Whisper API for Tanzanian Swahili transcription.
-    Falls back to MockASRService when OPENAI_API_KEY is not set.
+    Uses Groq Whisper Large V3 Turbo for fast, free Swahili transcription.
     """
 
-    SWAHILI_PROMPT = (
-        "Hii ni rekodi ya biashara ndogo ya Afrika Mashariki. "
-        "Mtumiaji anasema kuhusu mapato, gharama, mauzo, au manunuzi. "
-        "Tafadhali andika kwa Kiswahili sahihi."
-    )
-
     def __init__(self):
-        api_key = os.getenv("OPENAI_API_KEY", "")
-        if not api_key or api_key.startswith("sk-..."):
-            logger.warning("OPENAI_API_KEY not set – using MockASRService")
-            self._client = None
+        self._api_key = os.getenv("GROQ_API_KEY", "")
+        if not self._api_key:
+            logger.warning("GROQ_API_KEY not set – using MockASRService")
         else:
-            try:
-                from openai import AsyncOpenAI
-                self._client = AsyncOpenAI(api_key=api_key)
-            except ImportError:
-                logger.error("openai package not installed")
-                self._client = None
+            logger.info("WhisperASRService ready using Groq Whisper Large V3 Turbo")
 
     async def transcribe(self, audio_bytes: bytes, filename: str = "audio.webm") -> ASRResult:
-        """
-        Transcribe audio bytes using Whisper.
-        Returns ASRResult with Swahili transcript and confidence.
-        """
         if len(audio_bytes) > MAX_AUDIO_SIZE_MB * 1024 * 1024:
             raise ValueError(f"Audio file exceeds {MAX_AUDIO_SIZE_MB}MB limit")
 
-        if self._client is None:
+        if not self._api_key:
             return await _mock_transcribe(audio_bytes, filename)
 
-        audio_file = io.BytesIO(audio_bytes)
-        audio_file.name = filename  # Required by OpenAI client
+        suffix = Path(filename).suffix or ".webm"
+        with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as tmp:
+            tmp.write(audio_bytes)
+            tmp_path = tmp.name
 
         try:
-            response = await self._client.audio.transcriptions.create(
-                model="whisper-1",
-                file=audio_file,
-                language="sw",                   # Swahili
-                prompt=self.SWAHILI_PROMPT,       # Tanzanian context
-                response_format="verbose_json",   # Includes segments + avg_logprob
-                temperature=0.0,                  # Deterministic
-            )
+            from groq import Groq
 
-            # Extract confidence from segment log-probabilities
-            segments = response.segments or []
+            client = Groq(api_key=self._api_key)
+
+            with open(tmp_path, "rb") as audio_file:
+                response = client.audio.transcriptions.create(
+                    model="whisper-large-v3-turbo",
+                    file=(filename, audio_file),
+                    language="sw",
+                    prompt=SWAHILI_PROMPT,
+                    response_format="verbose_json",
+                    temperature=0.0,
+                )
+
+            # Clean transcript — remove any prompt leakage
+            transcript = _clean_transcript(response.text.strip())
+
+            segments = getattr(response, "segments", []) or []
             confidence = _estimate_confidence(segments)
+            duration = getattr(response, "duration", 0.0) or 0.0
 
             return ASRResult(
-                transcript=response.text.strip(),
-                language=response.language or "sw",
+                transcript=transcript,
+                language=getattr(response, "language", "sw") or "sw",
                 confidence=confidence,
-                duration_seconds=response.duration or 0.0,
+                duration_seconds=float(duration),
                 segments=segments,
             )
 
         except Exception as e:
-            logger.error(f"Whisper API error: {e}")
+            logger.error(f"Groq Whisper error: {e}")
             raise RuntimeError(f"Transcription failed: {str(e)}") from e
+
+        finally:
+            try:
+                os.unlink(tmp_path)
+            except Exception:
+                pass
+
+
+def _clean_transcript(text: str) -> str:
+    """Remove common Whisper hallucinations and prompt leakage."""
+    # Remove repeated phrases at the end
+    hallucinations = [
+        "tafadhali andika",
+        "tafadhali andika kuhusu",
+        "kuhusu mapato, gharama",
+        "mauzo, au manunuzi",
+        "hii ni rekodi",
+        "mtumiaji anasema",
+        "kwa kiswahili sahihi",
+        "asante kwa kutazama",
+        "usajili wa",
+    ]
+    text_lower = text.lower()
+    for phrase in hallucinations:
+        idx = text_lower.find(phrase)
+        if idx > 10:  # Only remove if not at the start
+            text = text[:idx].strip()
+            text_lower = text.lower()
+
+    # Remove trailing punctuation artifacts
+    text = text.rstrip(".,;: ")
+    return text
 
 
 def _estimate_confidence(segments: list) -> float:
-    """
-    Convert Whisper's avg_logprob per segment to a 0–1 confidence score.
-    avg_logprob is typically in range [-1, 0]; we map to [0, 1].
-    """
     if not segments:
-        return 0.5
+        return 0.85
     log_probs = [s.get("avg_logprob", -0.5) for s in segments if "avg_logprob" in s]
     if not log_probs:
-        return 0.5
+        return 0.85
     avg = sum(log_probs) / len(log_probs)
-    # Clamp: -1.0 → 0.0, 0.0 → 1.0
     return max(0.0, min(1.0, avg + 1.0))
 
 
-# ── Mock service for development / testing ───────────────────────────────────
+# ── Mock fallback ─────────────────────────────────────────────────────────────
 MOCK_RESPONSES = [
     "Nimeuza ndizi mia mbili leo, jumla shilingi elfu ishirini",
     "Nimenunua unga wa dona mifuko mitano, bei shilingi elfu kumi na mbili",
     "Leo nimepata mapato ya huduma shilingi elfu thelathini na tano",
     "Nililipa kodi ya duka shilingi elfu hamsini mwezi huu",
-    "Nimenunua malighafi ya nyama kilo tano, shilingi elfu kumi na nane",
 ]
 
 _mock_index = 0

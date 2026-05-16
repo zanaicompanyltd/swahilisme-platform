@@ -99,6 +99,18 @@ async def list_transactions(
         base_sql += " AND type = %s"
         params.append(type)
 
+# ── Updated TranscribeResponse schema (replace in daftari.py) ────────────────
+
+class TranscribeResponse(BaseModel):
+    transcript: str           # cleaned transcript (corrected by Groq)
+    raw_transcript: str       # original noisy Whisper output
+    language: str
+    confidence: float
+    duration_seconds: float
+    nlp: dict
+
+
+# ── Updated transcribe endpoint (replace in daftari.py) ─────────────────────
     base_sql += f" ORDER BY transaction_date DESC, created_at DESC LIMIT {limit} OFFSET {offset}"
 
     rows = query_db(base_sql, tuple(params))
@@ -306,45 +318,28 @@ async def generate_health_card(
         styles = getSampleStyleSheet()
         story  = []
 
-        green = colors.HexColor("#1a6b3a")
+    # nlp_result.description holds the CLEANED transcript from Groq
+    cleaned_transcript = nlp_result.description if nlp_result.description else asr_result.transcript
 
-        title_style = ParagraphStyle(
-            "Title", parent=styles["Title"],
-            textColor=green, fontSize=20, spaceAfter=6,
-        )
-        story.append(Paragraph("Kadi ya Afya ya Biashara", title_style))
-        story.append(Paragraph("Business Health Card — SwahiliSME Platform", styles["Normal"]))
-        story.append(Spacer(1, 0.5*cm))
-
-        biz_name = u.get("business_name") or "Biashara Yako"
-        story.append(Paragraph(f"<b>Jina la Biashara:</b> {biz_name}", styles["Normal"]))
-        story.append(Paragraph(f"<b>Mmiliki:</b> {u.get('name', user_id)}", styles["Normal"]))
-        story.append(Paragraph(f"<b>Kipindi:</b> Siku {days} zilizopita", styles["Normal"]))
-        story.append(Paragraph(f"<b>Tarehe:</b> {datetime.now().date()}", styles["Normal"]))
-        story.append(Spacer(1, 0.5*cm))
-
-        data = [
-            ["Kiashiria",           "Kiasi (TZS)"],
-            ["Mapato (Jumla)",       f"{revenue:,.0f}"],
-            ["Gharama (Jumla)",      f"{cost:,.0f}"],
-            ["Faida Halisi",         f"{profit:,.0f}"],
-            ["Asilimia Faida",       f"{margin}%"],
-            ["Idadi ya Miamala",     str(int(s.get("tx_count", 0) or 0))],
-        ]
-        tbl = Table(data, colWidths=[9*cm, 6*cm])
-        tbl.setStyle(TableStyle([
-            ("BACKGROUND",    (0, 0), (-1, 0),  green),
-            ("TEXTCOLOR",     (0, 0), (-1, 0),  colors.white),
-            ("FONTNAME",      (0, 0), (-1, 0),  "Helvetica-Bold"),
-            ("FONTSIZE",      (0, 0), (-1, -1), 11),
-            ("ROWBACKGROUNDS",(0, 1), (-1, -1), [colors.white, colors.HexColor("#f0f9f4")]),
-            ("GRID",          (0, 0), (-1, -1), 0.5, colors.HexColor("#d1fae5")),
-            ("LEFTPADDING",   (0, 0), (-1, -1), 10),
-            ("TOPPADDING",    (0, 0), (-1, -1), 6),
-            ("BOTTOMPADDING", (0, 0), (-1, -1), 6),
-        ]))
-        story.append(tbl)
-        story.append(Spacer(1, 1*cm))
+    return TranscribeResponse(
+        transcript=cleaned_transcript,           # ← show cleaned version
+        raw_transcript=asr_result.transcript,    # ← keep original for debugging
+        language=asr_result.language,
+        confidence=asr_result.confidence,
+        duration_seconds=asr_result.duration_seconds,
+        nlp={
+            "transaction_type": nlp_result.transaction_type.value if nlp_result.transaction_type else None,
+            "category":         nlp_result.category.value if nlp_result.category else None,
+            "amount":           nlp_result.amount,
+            "transaction_date": nlp_result.transaction_date.isoformat() if nlp_result.transaction_date else None,
+            "product_name":     nlp_result.product_name,
+            "quantity":         nlp_result.quantity,
+            "confidence":       nlp_result.confidence,
+            "warnings":         nlp_result.warnings,
+            "all_transactions": nlp_result.all_transactions,  # ← all found transactions
+        },
+    )
+# ── 1.3.3  Ledger CRUD ────────────────────────────────────────────────────────
 
         disclaimer = (
             "<i>Hii ni muhtasari wa data ya biashara yako kwa matumizi ya maombi ya mkopo. "

@@ -1,278 +1,353 @@
 """
 backend/services/nlp/swahili_ner.py
-1.3.2 – NLP Pipeline: Named Entity Recognition for Swahili transactions
+1.3.2 – NLP Pipeline using Groq LLM (Llama 3.3 70b)
 
-Extracts from free Swahili text:
-  • amount     – e.g. "elfu ishirini" → 20000, "shilingi 5,000" → 5000
-  • category   – maps keywords to TransactionCategory enum
-  • type       – mapato (income) or gharama (expense)
-  • date       – "leo", "jana", "juzi", explicit dates
-  • product    – item name if mentioned
-  • quantity   – units sold/bought
+Two-step pipeline:
+  1. Clean/correct noisy Whisper transcript → store as description
+  2. Extract ALL transactions from clean text
 """
 import re
+import os
+import json
 import logging
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
-from typing import Optional
+from typing import Optional, List
 
 try:
     from backend.models.ledger import TransactionType, TransactionCategory
 except ModuleNotFoundError:
-    # Fallback for running the file directly or from project root without
-    # the package on sys.path.  Works when CWD is the project root.
-    import sys, os
+    import sys
     sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", ".."))
     from backend.models.ledger import TransactionType, TransactionCategory
 
 logger = logging.getLogger(__name__)
 
 
-# ── Swahili number words ──────────────────────────────────────────────────────
-SWAHILI_ONES = {
-    "moja": 1, "mbili": 2, "tatu": 3, "nne": 4, "tano": 5,
-    "sita": 6, "saba": 7, "nane": 8, "tisa": 9, "kumi": 10,
-    "kumi na moja": 11, "kumi na mbili": 12, "kumi na tatu": 13,
-    "kumi na nne": 14, "kumi na tano": 15, "kumi na sita": 16,
-    "kumi na saba": 17, "kumi na nane": 18, "kumi na tisa": 19,
-    "ishirini": 20, "thelathini": 30, "arobaini": 40, "hamsini": 50,
-    "sitini": 60, "sabini": 70, "themanini": 80, "tisini": 90,
-}
-
-SWAHILI_MULTIPLIERS = {
-    "mia": 100, "elfu": 1000, "laki": 100_000, "milioni": 1_000_000,
-}
-
-# ── Income/Expense keyword maps ───────────────────────────────────────────────
-INCOME_KEYWORDS = [
-    "nimeuza", "niliuza", "mauzo", "mapato", "nimepata", "nilipata",
-    "huduma", "faida", "pato", "mkopo uliopokelewa", "fedha zilizoingia",
-    "aliambia", "walilipa", "wateja walinipa",
-]
-
-EXPENSE_KEYWORDS = [
-    "nimenunua", "nilinunua", "manunuzi", "gharama", "nililipa", "nilipa",
-    "kodi", "mishahara", "mshahara", "umeme", "maji", "usafiri", "nauli",
-    "matangazo", "tangazo", "mkopo", "deni", "malipo", "nimelipa",
-    "nimechukua", "nimetumia",
-]
-
-# ── Category keyword map ──────────────────────────────────────────────────────
-CATEGORY_MAP = {
-    TransactionCategory.MAUZO:          ["uza", "mauzo", "bidhaa", "duka", "soko"],
-    TransactionCategory.HUDUMA:         ["huduma", "fundi", "ushauri", "kazi"],
-    TransactionCategory.MALIGHAFI:      ["malighafi", "unga", "nyama", "mboga", "mafuta", "sukari",
-                                         "chumvi", "vifaa", "bidhaa za kununua"],
-    TransactionCategory.MISHAHARA:      ["mshahara", "mishahara", "mfanyakazi", "wafanyakazi"],
-    TransactionCategory.KODI:           ["kodi", "pango", "nyumba"],
-    TransactionCategory.UMEME:          ["umeme", "stima", "tanesco", "luku"],
-    TransactionCategory.USAFIRI:        ["usafiri", "nauli", "gari", "boda", "pikipiki", "mafuta ya gari"],
-    TransactionCategory.MATANGAZO:      ["tangazo", "matangazo", "reklama", "advertis"],
-    TransactionCategory.MKOPO_ULIOLIPWA: ["mkopo", "deni", "kulipa mkopo"],
-    TransactionCategory.NYINGINE_GHARAMA: [],
-    TransactionCategory.NYINGINE_MAPATO: [],
-}
-
-# ── Date keywords ─────────────────────────────────────────────────────────────
-DATE_KEYWORDS = {
-    "leo": 0, "jana": -1, "juzi": -2, "kesho": 1,
-    "wiki iliyopita": -7, "mwezi uliopita": -30,
-}
-
-
-# ── Result dataclass ──────────────────────────────────────────────────────────
 @dataclass
 class NLPResult:
-    # Core extracted entities
     transaction_type: Optional[TransactionType] = None
     category: Optional[TransactionCategory] = None
     amount: Optional[float] = None
     transaction_date: Optional[datetime] = None
-    description: str = ""
-
-    # Optional enrichments
+    description: str = ""           # ← stores CLEANED transcript
     product_name: Optional[str] = None
     quantity: Optional[float] = None
     unit_price: Optional[float] = None
-
-    # Metadata
     confidence: float = 0.0
     raw_entities: dict = field(default_factory=dict)
     warnings: list = field(default_factory=list)
+    all_transactions: list = field(default_factory=list)  # ← all found transactions
 
 
-# ── Main NLP Service ──────────────────────────────────────────────────────────
 class SwahiliNERService:
 
+    def __init__(self):
+        self._api_key = os.getenv("GROQ_API_KEY", "")
+        if not self._api_key:
+            logger.warning("GROQ_API_KEY not set – using regex fallback NLP")
+            self._use_ai = False
+        else:
+            self._use_ai = True
+            logger.info("SwahiliNERService using Groq Llama 3.3 70b")
+
     def extract(self, text: str) -> NLPResult:
-        """
-        Main entry point. Takes raw Swahili transcript, returns NLPResult.
-        """
-        text_lower = text.lower().strip()
-        result = NLPResult(description=text)
+        if self._use_ai:
+            try:
+                return self._extract_with_groq(text)
+            except Exception as e:
+                logger.error(f"Groq NLP failed, falling back to regex: {e}")
+        return self._extract_with_regex(text)
 
-        result.transaction_type = self._extract_type(text_lower)
-        result.amount = self._extract_amount(text_lower)
-        result.transaction_date = self._extract_date(text_lower)
-        result.category = self._extract_category(text_lower, result.transaction_type)
-        result.product_name = self._extract_product(text_lower)
-        result.quantity = self._extract_quantity(text_lower)
-        result.confidence = self._compute_confidence(result)
+    # ── Step 1: Clean transcript ──────────────────────────────────────────────
+    def _clean_transcript(self, text: str) -> str:
+        from groq import Groq
+        client = Groq(api_key=self._api_key)
 
-        result.raw_entities = {
-            "type": result.transaction_type,
-            "amount": result.amount,
-            "date": result.transaction_date.isoformat() if result.transaction_date else None,
-            "category": result.category,
-            "product": result.product_name,
-            "quantity": result.quantity,
-        }
+        prompt = f"""Fix spelling errors in this Swahili business text from voice recognition.
+Common errors to fix:
+- "harama" → "gharama"
+- "miloni" → "milioni"
+- "mteje" → "mteja"
+- "tarahe/tarahee" → "tarehe"
+- "kuminambili" → "kumi na mbili"
+- "laki nini" → "laki nne"
+- "malipu" → "malipo"
+- "faide" → "faida"
+- "thamanini" → "themanini"
+- years like "1226" → "2026"
+- "aituai" → "aitwaye"
+- "mshoni mwasiku" → "mwishoni mwa siku"
+
+Return ONLY the corrected Swahili text, nothing else.
+
+Text: {text}"""
+
+        response = client.chat.completions.create(
+            model="llama-3.3-70b-versatile",
+            messages=[{"role": "user", "content": prompt}],
+            temperature=0.0,
+            max_tokens=600,
+        )
+        cleaned = response.choices[0].message.content.strip()
+        logger.info(f"Cleaned transcript: {cleaned[:100]}...")
+        return cleaned
+
+    # ── Step 2: Extract ALL transactions ─────────────────────────────────────
+    def _extract_with_groq(self, text: str) -> NLPResult:
+        from groq import Groq
+
+        clean_text = self._clean_transcript(text)
+        today = datetime.utcnow().strftime("%Y-%m-%d")
+
+        prompt = f"""You are a Swahili business transaction analyzer for East African SMEs.
+
+Extract ALL separate transactions from this text. Each transaction should be separate.
+
+Text: "{clean_text}"
+Today: {today}
+
+Return ONLY this JSON (no explanation):
+{{
+  "transactions": [
+    {{
+      "transaction_type": "mapato" or "gharama",
+      "category": one of: "mauzo","huduma","mkopo_uliopokelewa","nyingine_mapato","malighafi","mishahara","kodi","umeme","usafiri","matangazo","mkopo_uliolipwa","nyingine_gharama",
+      "amount": number,
+      "transaction_date": "YYYY-MM-DD",
+      "product_name": string or null,
+      "quantity": number or null,
+      "description": "short description in Swahili",
+      "confidence": number 0.0-1.0
+    }}
+  ],
+  "warnings": []
+}}
+
+Example for "alinunua simu 15 kwa milioni 7.5, alilipa kodi laki 3, alipata mapato milioni 2.45":
+{{
+  "transactions": [
+    {{"transaction_type":"gharama","category":"malighafi","amount":7500000,"product_name":"Samsung Galaxy","quantity":15,"description":"Ununuzi wa simu 15 Samsung Galaxy"}},
+    {{"transaction_type":"gharama","category":"kodi","amount":350000,"description":"Kodi ya duka"}},
+    {{"transaction_type":"gharama","category":"usafiri","amount":80000,"description":"Gharama za usafiri"}},
+    {{"transaction_type":"mapato","category":"mauzo","amount":1200000,"description":"Malipo ya simu 3 kutoka Hamad Said"}},
+    {{"transaction_type":"mapato","category":"mauzo","amount":2450000,"description":"Jumla ya mauzo ya siku"}}
+  ]
+}}
+
+Rules:
+- "milioni saba na laki tano" = 7500000
+- "laki tatu na nusu" = 350000  
+- "elfu themanini" = 80000
+- "milioni moja na laki mbili" = 1200000
+- "milioni mbili laki nne na hamsini" = 2450000
+- "laki sita na ishirini" = 620000 (faida)
+- Return ONLY the JSON"""
+
+        client = Groq(api_key=self._api_key)
+        response = client.chat.completions.create(
+            model="llama-3.3-70b-versatile",
+            messages=[{"role": "user", "content": prompt}],
+            temperature=0.0,
+            max_tokens=800,
+        )
+
+        raw = response.choices[0].message.content.strip()
+        raw = re.sub(r'^```(?:json)?\s*', '', raw)
+        raw = re.sub(r'\s*```$', '', raw)
+
+        data = json.loads(raw)
+        transactions = data.get("transactions", [])
+        warnings = data.get("warnings", [])
+
+        # Build primary result from first transaction
+        primary = transactions[0] if transactions else {}
+        result = self._build_result(primary, clean_text, warnings)
+
+        # Store ALL transactions for frontend to display
+        result.all_transactions = transactions
+
+        return result
+
+    def _build_result(self, data: dict, text: str, warnings: list = []) -> NLPResult:
+        today = datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
+        result = NLPResult(description=text)  # description = cleaned transcript
+
+        tx_type = data.get("transaction_type")
+        if tx_type == "mapato":
+            result.transaction_type = TransactionType.MAPATO
+        elif tx_type == "gharama":
+            result.transaction_type = TransactionType.GHARAMA
+
+        cat = data.get("category")
+        try:
+            result.category = TransactionCategory(cat) if cat else None
+        except ValueError:
+            result.category = None
+
+        amt = data.get("amount")
+        result.amount = float(amt) if amt is not None else None
+
+        date_str = data.get("transaction_date")
+        if date_str:
+            try:
+                result.transaction_date = datetime.strptime(date_str, "%Y-%m-%d")
+            except ValueError:
+                result.transaction_date = today
+        else:
+            result.transaction_date = today
+
+        result.product_name = data.get("product_name")
+        qty = data.get("quantity")
+        result.quantity = float(qty) if qty is not None else None
+        result.confidence = float(data.get("confidence", 0.8))
+        result.warnings = list(warnings)
 
         if result.amount is None:
             result.warnings.append("Kiasi hakikupatikana – tafadhali weka kiasi mwenyewe")
         if result.transaction_type is None:
             result.warnings.append("Aina ya muamala haijulikani – tafadhali chagua mapato au gharama")
 
+        result.raw_entities = {
+            "type":     result.transaction_type,
+            "amount":   result.amount,
+            "date":     result.transaction_date.isoformat() if result.transaction_date else None,
+            "category": result.category,
+            "product":  result.product_name,
+            "quantity": result.quantity,
+        }
         return result
 
-    # ── Type detection ────────────────────────────────────────────────────────
-    def _extract_type(self, text: str) -> Optional[TransactionType]:
-        income_score = sum(1 for kw in INCOME_KEYWORDS if kw in text)
-        expense_score = sum(1 for kw in EXPENSE_KEYWORDS if kw in text)
+    # ── Regex fallback ────────────────────────────────────────────────────────
+    def _extract_with_regex(self, text: str) -> NLPResult:
+        text_lower = text.lower().strip()
+        result = NLPResult(description=text)
+        result.transaction_type  = self._regex_type(text_lower)
+        result.transaction_date  = self._regex_date(text_lower)
+        result.amount            = self._regex_amount(text_lower)
+        result.category          = self._regex_category(text_lower, result.transaction_type)
+        result.product_name      = self._regex_product(text_lower)
+        result.quantity          = self._regex_quantity(text_lower)
+        result.confidence        = self._compute_confidence(result)
+        result.raw_entities = {
+            "type":     result.transaction_type,
+            "amount":   result.amount,
+            "date":     result.transaction_date.isoformat() if result.transaction_date else None,
+            "category": result.category,
+            "product":  result.product_name,
+            "quantity": result.quantity,
+        }
+        if result.amount is None:
+            result.warnings.append("Kiasi hakikupatikana – tafadhali weka kiasi mwenyewe")
+        if result.transaction_type is None:
+            result.warnings.append("Aina ya muamala haijulikani – tafadhali chagua mapato au gharama")
+        return result
 
-        if income_score > expense_score:
-            return TransactionType.MAPATO
-        elif expense_score > income_score:
-            return TransactionType.GHARAMA
-        elif income_score == expense_score and income_score > 0:
-            return TransactionType.MAPATO  # default to income on tie
+    def _regex_type(self, text):
+        income_kw  = ["nimeuza","niliuza","nikauza","mauzo","mapato","nimepata",
+                       "nilipata","huduma","faida","walilipa","wateja","alipokea"]
+        expense_kw = ["nimenunua","nilinunua","nikanunua","alinunua","gharama",
+                       "nililipa","alilipa","kodi","mishahara","umeme","usafiri","nimelipa"]
+        inc = sum(1 for kw in income_kw  if kw in text)
+        exp = sum(1 for kw in expense_kw if kw in text)
+        if inc > exp:  return TransactionType.MAPATO
+        if exp > inc:  return TransactionType.GHARAMA
+        if inc > 0:    return TransactionType.MAPATO
         return None
 
-    # ── Amount extraction ─────────────────────────────────────────────────────
-    def _extract_amount(self, text: str) -> Optional[float]:
-        # 1. Numeric: "5,000" or "5000" or "50,000/="
-        numeric = re.search(r'(\d[\d,\.]*)\s*(?:shilingi|tzs|/=)?', text)
-        if numeric:
-            raw = numeric.group(1).replace(",", "").replace(".", "")
+    SWAHILI_ONES = {
+        "moja":1,"mbili":2,"tatu":3,"nne":4,"tano":5,"sita":6,"saba":7,
+        "nane":8,"tisa":9,"kumi":10,"kumi na moja":11,"kumi na mbili":12,
+        "kumi na tatu":13,"kumi na nne":14,"kumi na tano":15,"kumi na sita":16,
+        "kumi na saba":17,"kumi na nane":18,"kumi na tisa":19,
+        "ishirini":20,"thelathini":30,"arobaini":40,"hamsini":50,
+        "sitini":60,"sabini":70,"themanini":80,"tisini":90,
+    }
+    SWAHILI_MULTIPLIERS = {"milioni":1_000_000,"laki":100_000,"elfu":1_000,"mia":100}
+
+    def _parse_swahili_number(self, text):
+        total = 0.0
+        remaining = text
+        for mult, mult_val in self.SWAHILI_MULTIPLIERS.items():
+            m = re.search(rf'(\w+(?:\s+na\s+\w+)?)\s+{mult}', remaining)
+            if m:
+                pval = self.SWAHILI_ONES.get(m.group(1).strip(),
+                       1 if mult == "mia" else None)
+                if pval is not None:
+                    total += pval * mult_val
+                    remaining = remaining.replace(m.group(0), "", 1)
+        for word, val in sorted(self.SWAHILI_ONES.items(), key=lambda x: -len(x[0])):
+            if re.search(rf'\b{word}\b', remaining):
+                total += val
+                break
+        return float(total) if total > 0 else None
+
+    def _regex_amount(self, text):
+        clean = re.sub(r'\d{1,2}[/\-]\d{1,2}(?:[/\-]\d{4})?', '', text)
+        word_amt = self._parse_swahili_number(clean)
+        if word_amt and word_amt >= 100: return word_amt
+        m = re.search(r'(\d[\d,\.]*)\s*(?:shilingi|tzs|/=)?', clean)
+        if m:
             try:
-                return float(raw)
-            except ValueError:
-                pass
+                val = float(m.group(1).replace(",","").replace(".",""))
+                if val >= 1: return val
+            except ValueError: pass
+        return word_amt
 
-        # 2. Swahili words: "elfu ishirini" → 20000
-        return self._parse_swahili_number(text)
-
-    def _parse_swahili_number(self, text: str) -> Optional[float]:
-        total = 0
-        found = False
-
-        # Match multiplier patterns: "mia mbili", "elfu tano", "milioni moja"
-        for multiplier, mult_val in SWAHILI_MULTIPLIERS.items():
-            pattern = rf'(\w+(?:\s+na\s+\w+)?)\s+{multiplier}(?:\s+na\s+(\w+(?:\s+\w+)?))?'
-            match = re.search(pattern, text)
-            if match:
-                prefix_word = match.group(1).strip()
-                suffix_word = (match.group(2) or "").strip()
-                prefix_val = SWAHILI_ONES.get(prefix_word, 1 if prefix_word == "" else None)
-                suffix_val = SWAHILI_ONES.get(suffix_word, 0) if suffix_word else 0
-                if prefix_val is not None:
-                    total += prefix_val * mult_val + suffix_val
-                    found = True
-
-        # Plain ones: "tano", "kumi na mbili"
-        if not found:
-            for word, val in sorted(SWAHILI_ONES.items(), key=lambda x: -len(x[0])):
-                if word in text:
-                    return float(val)
-
-        return float(total) if found else None
-
-    # ── Date extraction ───────────────────────────────────────────────────────
-    def _extract_date(self, text: str) -> Optional[datetime]:
+    def _regex_date(self, text):
         today = datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
+        for kw, d in {"wiki iliyopita":-7,"mwezi uliopita":-30,"juzi":-2,"jana":-1,"leo":0,"kesho":1}.items():
+            if kw in text: return today + timedelta(days=d)
+        return today
 
-        for keyword, delta in DATE_KEYWORDS.items():
-            if keyword in text:
-                return today + timedelta(days=delta)
-
-        # Explicit date: "tarehe 15 Mei" or "15/05/2026"
-        date_match = re.search(r'(\d{1,2})[/\-](\d{1,2})(?:[/\-](\d{4}))?', text)
-        if date_match:
-            day, month = int(date_match.group(1)), int(date_match.group(2))
-            year = int(date_match.group(3)) if date_match.group(3) else today.year
-            try:
-                return datetime(year, month, day)
-            except ValueError:
-                pass
-
-        return today  # default to today
-
-    # ── Category detection ────────────────────────────────────────────────────
-    def _extract_category(
-        self, text: str, tx_type: Optional[TransactionType]
-    ) -> Optional[TransactionCategory]:
-        scores = {}
-        for category, keywords in CATEGORY_MAP.items():
-            score = sum(1 for kw in keywords if kw in text)
-            if score > 0:
-                scores[category] = score
-
-        if scores:
-            return max(scores, key=scores.get)
-
-        # Fallback based on type
-        if tx_type == TransactionType.MAPATO:
-            return TransactionCategory.MAUZO
-        elif tx_type == TransactionType.GHARAMA:
-            return TransactionCategory.NYINGINE_GHARAMA
+    def _regex_category(self, text, tx_type):
+        cat_map = {
+            TransactionCategory.MAUZO:           ["uza","mauzo","bidhaa","duka","soko","wateja"],
+            TransactionCategory.HUDUMA:          ["huduma","fundi","ushauri","kazi"],
+            TransactionCategory.MALIGHAFI:       ["malighafi","unga","nyama","mboga","mafuta","sukari","mahindi","mchele","samaki","ndizi","simu","vifaa"],
+            TransactionCategory.MISHAHARA:       ["mshahara","mishahara","mfanyakazi","kibarua"],
+            TransactionCategory.KODI:            ["kodi","pango","nyumba"],
+            TransactionCategory.UMEME:           ["umeme","stima","tanesco","luku"],
+            TransactionCategory.USAFIRI:         ["usafiri","nauli","gari","boda","pikipiki","daladala"],
+            TransactionCategory.MATANGAZO:       ["tangazo","matangazo","reklama"],
+            TransactionCategory.MKOPO_ULIOLIPWA: ["mkopo","deni"],
+        }
+        scores = {c: sum(1 for kw in kws if kw in text) for c, kws in cat_map.items()}
+        scores = {k:v for k,v in scores.items() if v > 0}
+        if scores: return max(scores, key=scores.get)
+        if tx_type == TransactionType.MAPATO:  return TransactionCategory.MAUZO
+        if tx_type == TransactionType.GHARAMA: return TransactionCategory.NYINGINE_GHARAMA
         return None
 
-    # ── Product extraction ────────────────────────────────────────────────────
-    def _extract_product(self, text: str) -> Optional[str]:
-        # Look for product after "uza/nunua [PRODUCT]"
-        match = re.search(
-            r'(?:nimenunua|nilinunua|nimeuza|niliuza|nimeona|mauzo ya)\s+([a-z\s]+?)(?:\s+\d|\s+mifuko|\s+kilo|\s+lita|,|\.|$)',
-            text
-        )
-        if match:
-            product = match.group(1).strip()
-            if len(product) > 2:
-                return product.title()
+    def _regex_product(self, text):
+        known = ["ndizi","mahindi","mchele","unga","sukari","mafuta","chumvi",
+                 "maharage","nyanya","vitunguu","nyama","samaki","mayai","maziwa",
+                 "chapati","mkate","sabuni","soda","viazi","simu","samsung","vifaa"]
+        for p in known:
+            if p in text: return p.title()
         return None
 
-    # ── Quantity extraction ───────────────────────────────────────────────────
-    def _extract_quantity(self, text: str) -> Optional[float]:
-        # "mifuko mitano", "kilo tano", "lita tatu", "vipande kumi"
-        match = re.search(
-            r'(\d+(?:\.\d+)?)\s*(?:kilo|lita|mifuko|vipande|vibaba|gunia)',
-            text
-        )
-        if match:
-            return float(match.group(1))
-
-        # Swahili number + unit
-        for word, val in SWAHILI_ONES.items():
-            if re.search(rf'{word}\s+(?:kilo|lita|mifuko|vipande)', text):
+    def _regex_quantity(self, text):
+        units = r'(?:kilo|kg|lita|mifuko|vipande|vibaba|gunia|debe)'
+        m = re.search(rf'(\d+(?:\.\d+)?)\s*{units}', text)
+        if m: return float(m.group(1))
+        for word, val in self.SWAHILI_ONES.items():
+            if re.search(rf'{units}\s+{word}|{word}\s+{units}', text):
                 return float(val)
         return None
 
-    # ── Confidence scoring ────────────────────────────────────────────────────
-    def _compute_confidence(self, result: NLPResult) -> float:
+    def _compute_confidence(self, result):
         score = 0.0
-        if result.transaction_type:
-            score += 0.25
-        if result.amount:
-            score += 0.40
-        if result.category:
-            score += 0.20
-        if result.transaction_date:
-            score += 0.15
-        return round(score, 2)
+        if result.transaction_type: score += 0.25
+        if result.amount:           score += 0.40
+        if result.category:         score += 0.20
+        if result.transaction_date: score += 0.10
+        if result.product_name:     score += 0.05
+        return round(min(score, 1.0), 2)
 
 
 # ── Singleton ─────────────────────────────────────────────────────────────────
 _nlp_service: SwahiliNERService | None = None
-
 
 def get_nlp_service() -> SwahiliNERService:
     global _nlp_service
