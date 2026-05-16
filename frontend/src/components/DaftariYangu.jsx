@@ -81,6 +81,7 @@ const AI_SUGGESTIONS = [
   "Bidhaa gani inaleta faida zaidi?",
 ];
 
+/*
 async function askMshauri(question, summary) {
   await new Promise((r) => setTimeout(r, 800));
   const rev = summary?.total_revenue || 0;
@@ -97,6 +98,40 @@ async function askMshauri(question, summary) {
     return `🏆 Angalia tab ya Takwimu → Bidhaa Bora ili uone bidhaa zinazokuleta mapato zaidi.`;
   return `🤖 Swali lako: "${question}"\n\nNinaweza kukusaidia na:\n• Uchambuzi wa mapato na gharama\n• Ushauri wa mikopo\n• Maswali ya TRA na BRELA\n• Mikakati ya kukuza biashara\n\nNiulize chochote kwa Kiswahili!`;
 }
+*/
+// DaftariYangu.jsx
+export async function askMshauri(question, summary) {
+  const apiKey = process.env.REACT_APP_GEMINI_KEY; // put in .env
+  const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`;
+
+  const systemPrompt = `
+    Wewe ni 'Mshauri Wangu', mshauri wa biashara Tanzania.
+    Jibu kwa Kiswahili rahisi na mistari michache tu (si zaidi ya 3).
+    Tumia muktadha wa TRA, ZRB, BRELA, NSSF ukipatikana.
+    Kama hakuna, toa ushauri wa jumla wa biashara na faida.
+  `;
+
+  const body = {
+    contents: [
+      { role: "system", parts: [{ text: systemPrompt }] },
+      { role: "user", parts: [{ text: question }] }
+    ]
+  };
+
+  try {
+    const res = await fetch(endpoint, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    const data = await res.json();
+    return data.candidates?.[0]?.content?.parts?.[0]?.text || "⚠️ Hakuna jibu.";
+  } catch (err) {
+    console.error("Gemini error:", err);
+    return "⚠️ Hitilafu ya mtandao au API.";
+  }
+}
+
 
 const fmt = (n) => "TZS " + Number(n || 0).toLocaleString();
 
