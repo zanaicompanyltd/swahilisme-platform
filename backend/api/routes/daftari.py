@@ -33,6 +33,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from backend.api.routes.dashboard import query_db, scalar_db, get_db
 from db.database import get_db
 from models.ledger import TransactionCategory, TransactionType, User
 from services.asr.whisper_service import get_asr_service
@@ -43,7 +44,7 @@ from services.pdf.health_card import generate_health_card
 router = APIRouter(prefix="/api/v1/daftari", tags=["Daftari Yangu"])
 
 
-# ── Pydantic schemas ──────────────────────────────────────────────────────────
+# ── Pydantic models ───────────────────────────────────────────────────────────
 
 class TranscribeResponse(BaseModel):
     transcript: str           # cleaned transcript (corrected by Groq)
@@ -114,6 +115,11 @@ async def transcribe_audio(
         },
     )
 
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"[Daftari] Create error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 # ── 1.3.3  Ledger CRUD ────────────────────────────────────────────────────────
 

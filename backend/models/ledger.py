@@ -1,13 +1,21 @@
 """
 backend/models/ledger.py
+Transaction model for Daftari Yangu ledger entries.
+
+IMPORTANT: Base is imported from backend.db.database — the same instance
+used by user.py. Never create a second Base here.
 Exact copy of your teammate's schema — do NOT change column names.
 Tables already exist in Supabase; SQLAlchemy will just connect to them.
 """
 from datetime import datetime
 from enum import Enum as PyEnum
+
+import enum
+from datetime import date, datetime
+
 from sqlalchemy import (
-    Column, String, Float, DateTime, Enum,
-    Text, Boolean, Integer, ForeignKey, JSON, Date
+    Boolean, Column, Date, DateTime,
+    Enum as SAEnum, Float, ForeignKey, Integer, String, Text,
 )
 from sqlalchemy.orm import declarative_base, relationship
 
@@ -19,7 +27,9 @@ Base = declarative_base()
 class TransactionType(str, PyEnum):
     MAPATO  = "mapato"
     GHARAMA = "gharama"
+from sqlalchemy.orm import relationship
 
+from backend.db.database import Base   # ← same Base as user.py
 
 class TransactionCategory(str, PyEnum):
     MAUZO              = "mauzo"
@@ -35,6 +45,10 @@ class TransactionCategory(str, PyEnum):
     MKOPO_ULIOLIPWA    = "mkopo_uliolipwa"
     NYINGINE_GHARAMA   = "nyingine_gharama"
 
+class TransactionType(str, enum.Enum):
+    revenue  = "revenue"
+    expense  = "expense"
+    purchase = "purchase"
 
 class TransactionSource(str, PyEnum):
     VOICE    = "voice"
@@ -69,6 +83,33 @@ class User(Base):
 class Transaction(Base):
     __tablename__ = "transactions"
 
+    id               = Column(Integer, primary_key=True, index=True)
+
+    # ── Owner ─────────────────────────────────────────────────────────────
+    user_id          = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+
+    # ── Offline sync dedup key ────────────────────────────────────────────
+    client_id        = Column(String(64), nullable=True, unique=True, index=True)
+
+    # ── Core fields ───────────────────────────────────────────────────────
+    transaction_type = Column(SAEnum(TransactionType), nullable=False)
+    amount           = Column(Float, nullable=True)   # revenue or expense amount
+    cost             = Column(Float, nullable=True)   # cost-of-goods within a revenue entry
+    profit           = Column(Float, nullable=True)   # computed: amount - cost
+
+    # ── NER-extracted metadata ────────────────────────────────────────────
+    category         = Column(String(100), nullable=True)
+    product          = Column(String(200), nullable=True)
+    transaction_date = Column(Date,        nullable=False, default=date.today)
+
+    # ── Audit trail ───────────────────────────────────────────────────────
+    raw_text         = Column(Text,    nullable=True)   # original Swahili utterance
+    asr_confidence   = Column(Float,   nullable=True)   # Whisper log-prob → 0-1
+    ner_confidence   = Column(Float,   nullable=True)   # NER model confidence
+    synced           = Column(Boolean, default=True)    # False = offline, not yet synced
+
+    created_at       = Column(DateTime, default=datetime.utcnow)
+    updated_at       = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     id             = Column(String(36),  primary_key=True)
     user_id        = Column(String(36),  ForeignKey("users.id"), nullable=False)
     type           = Column(Enum(TransactionType),     nullable=False)
@@ -92,6 +133,7 @@ class Transaction(Base):
     created_at     = Column(DateTime,   default=datetime.utcnow)
     updated_at     = Column(DateTime,   default=datetime.utcnow, onupdate=datetime.utcnow)
 
+    # ── Relationship ──────────────────────────────────────────────────────
     user = relationship("User", back_populates="transactions")
 
 
@@ -129,7 +171,27 @@ class BusinessHealthCard(Base):
 
     user = relationship("User", back_populates="business_health_cards")
 
+    def to_dict(self) -> dict:
+        return {
+            "id":               self.id,
+            "user_id":          self.user_id,
+            "client_id":        self.client_id,
+            "transaction_type": self.transaction_type.value,
+            "amount":           self.amount,
+            "cost":             self.cost,
+            "profit":           self.profit,
+            "category":         self.category,
+            "product":          self.product,
+            "transaction_date": self.transaction_date.isoformat() if self.transaction_date else None,
+            "raw_text":         self.raw_text,
+            "asr_confidence":   self.asr_confidence,
+            "ner_confidence":   self.ner_confidence,
+            "synced":           self.synced,
+            "created_at":       self.created_at.isoformat(),
+        }
 
+    def __repr__(self):
+        return f"<Transaction id={self.id} type={self.transaction_type} amount={self.amount}>"
 # ── whatsapp_messages ─────────────────────────────────────────────────────────
 
 class WhatsAppMessage(Base):

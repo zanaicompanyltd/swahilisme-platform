@@ -1,6 +1,5 @@
 // App.js — SwahiliSME Platform
-// DaftariYangu is now the unified app (analytics + AI + ledger)
-// SalesExpenseTracker & AnalyticsDashboard routes REMOVED (duplicate eliminated)
+// Auth gate added: shows AuthPage until user is verified, then loads the app
 
 import React from "react";
 import {
@@ -11,9 +10,19 @@ import {
   useLocation,
 } from "react-router-dom";
 import DaftariYangu from "./components/DaftariYangu";
+import AuthPage from "./components/AuthPage";
+import useAuth from "./hooks/useAuth";
 import sw from "./i18n/sw.json";
 
 function App() {
+  const auth = useAuth();
+
+  // ── Show login page until authenticated ───────────────────────────────
+  if (!auth.isAuthenticated) {
+    return <AuthPage authHook={auth} />;
+  }
+
+  // ── Authenticated — show the full app ─────────────────────────────────
   return (
     <Router>
       <div
@@ -24,11 +33,10 @@ function App() {
           background: "#f5f5f7",
         }}
       >
-        <NavBar />
+        <NavBar user={auth.user} onLogout={auth.logout} />
         <Routes>
           <Route path="/"        element={<HomePage />} />
-          <Route path="/daftari" element={<DaftariYangu />} />
-          {/* /analytics and /tracker intentionally removed — both live inside DaftariYangu tabs */}
+          <Route path="/daftari" element={<DaftariYangu user={auth.user} getToken={auth.getToken} />} />
         </Routes>
       </div>
     </Router>
@@ -36,7 +44,7 @@ function App() {
 }
 
 // ── NavBar ─────────────────────────────────────────────────────────────────────
-function NavBar() {
+function NavBar({ user, onLogout }) {
   const location = useLocation();
   const links = [
     { to: "/",        label: "Nyumbani" },
@@ -69,6 +77,7 @@ function NavBar() {
       >
         🌍 SwahiliSME
       </span>
+
       {links.map(({ to, label }) => (
         <Link
           key={to}
@@ -90,6 +99,28 @@ function NavBar() {
           {label}
         </Link>
       ))}
+
+      {/* User info + logout — right side */}
+      <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 10 }}>
+        <span style={{ color: "rgba(255,255,255,0.85)", fontSize: 12 }}>
+          👤 {user?.full_name || user?.phone_number || "Mtumiaji"}
+        </span>
+        <button
+          onClick={onLogout}
+          style={{
+            background: "rgba(255,255,255,0.15)",
+            border: "1px solid rgba(255,255,255,0.3)",
+            borderRadius: 20,
+            padding: "4px 12px",
+            color: "#fff",
+            fontSize: 12,
+            cursor: "pointer",
+            fontWeight: 500,
+          }}
+        >
+          Toka
+        </button>
+      </div>
     </nav>
   );
 }

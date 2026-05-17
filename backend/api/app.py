@@ -9,7 +9,13 @@ import logging  # ← add this line
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from api.routes import dashboard, daftari
+
+# ── STEP 1: create engine + Base (no model imports yet) ──────────────────
+from backend.db.database import create_all_tables
+
+# ── STEP 2: import all models via __init__ so they register on Base ───────
+import backend.models  # noqa: F401 — triggers backend/models/__init__.py
+
 
 # Load .env file if python-dotenv is installed
 try:
@@ -40,33 +46,23 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(
-    title="SwahiliSME Platform API",
-    description="AI-powered Swahili business management for SMEs in East Africa",
-    version="1.0.0-MVP",
-    docs_url="/docs",
-)
-
-# CORS - Allow your Vercel frontend
-ALLOWED_ORIGINS = os.getenv(
-    "ALLOWED_ORIGINS",
-    "http://localhost:3000,https://swahilisme-platform.vercel.app,https://swahilisme-platform-ax7sue4i8-zanai.vercel.app,https://*.vercel.app"
+    title="Swahilisme Platform API",
+    version="1.0.0",
+    description="Daftari Yangu — Voice bookkeeping for Tanzanian SMEs",
 )
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=["*"],   # tighten in production
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-# Register routes
-app.include_router(dashboard_router, prefix="/api/v1/dashboard", tags=["Dashboard"])
-app.include_router(daftari_router)   # already has prefix="/api/v1/daftari" in its own file
-
-# ── Routes ────────────────────────────────────────────────────────────────────
-app.include_router(dashboard.router, prefix="/api/v1/dashboard", tags=["📊 Analytics Dashboard"])
-app.include_router(daftari.router,   prefix="/api/v1/daftari",   tags=["📒 Daftari Yangu"])
+# ── Routers ───────────────────────────────────────────────────────────────
+app.include_router(auth_router)
+app.include_router(daftari_router)
+app.include_router(dashboard_router)
 
 @app.get("/", tags=["Root"])
 async def root():
@@ -79,6 +75,10 @@ async def root():
         "tagline":  "Teknolojia kwa Lugha Yetu",
     }
 
+@app.on_event("startup")
+def on_startup():
+    """Create all DB tables on first run."""
+    create_all_tables()
 @app.get("/health", tags=["Root"])
 
 @app.get("/health", tags=["Health"])
@@ -94,3 +94,8 @@ async def health():
     except Exception as e:
         db_status = f"error: {str(e)}"
     return {"status": "healthy", "database": db_status}
+
+
+@app.get("/health")
+def health():
+    return {"status": "ok", "service": "swahilisme-api"}
