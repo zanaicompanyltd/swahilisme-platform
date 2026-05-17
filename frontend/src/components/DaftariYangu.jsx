@@ -80,7 +80,7 @@ const AI_SUGGESTIONS = [
 ];
 
 export async function askMshauri(question, summary) {
-  const apiKey = process.env.REACT_APP_GEMINI_KEY;
+  const apiKey = AIzaSyCgVFR0Fw4vQl4njRlQ8aLFeQbkxtMv8io;
   const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`;
 
   const systemPrompt = `
