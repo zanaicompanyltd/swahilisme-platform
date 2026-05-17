@@ -1,13 +1,14 @@
 """
 backend/services/asr/whisper_service.py
-1.3.1 – ASR Integration using Groq Whisper Large V3 Turbo (free, fast)
+1.3.1 – ASR Integration using Groq Whisper Large V3 Turbo
 
-No local model needed. Works perfectly for deployment. this allows to support different formats
-Supported formats: mp3, wav, m4a, ogg, webm
+Converts audio to mp3 via ffmpeg before sending to Groq (fixes webm rejection).
+Falls back to sending raw audio if ffmpeg not available.
 """
 import os
 import logging
 import tempfile
+import subprocess
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -32,9 +33,6 @@ class ASRResult:
 
 
 class WhisperASRService:
-    """
-    Uses Groq Whisper Large V3 Turbo for fast, free Swahili transcription.
-    """
 
     def __init__(self):
         self._api_key = os.getenv("GROQ_API_KEY", "")
@@ -50,29 +48,50 @@ class WhisperASRService:
         if not self._api_key:
             return await _mock_transcribe(audio_bytes, filename)
 
+        # Save original audio to temp file
         suffix = Path(filename).suffix or ".webm"
         with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as tmp:
             tmp.write(audio_bytes)
             tmp_path = tmp.name
 
+        # Convert to mp3 using ffmpeg (Groq supports mp3 reliably)
+        mp3_path = tmp_path.replace(suffix, ".mp3")
+        converted = False
+
+        try:
+            result = subprocess.run(
+                ["ffmpeg", "-y", "-i", tmp_path,
+                 "-ar", "16000", "-ac", "1", "-b:a", "64k",
+                 mp3_path],
+                capture_output=True, timeout=30
+            )
+            if result.returncode == 0:
+                converted = True
+                logger.info("Audio converted to mp3 successfully")
+            else:
+                logger.warning(f"ffmpeg conversion failed: {result.stderr.decode()}")
+        except (FileNotFoundError, subprocess.TimeoutExpired) as e:
+            logger.warning(f"ffmpeg not available: {e} — sending raw audio")
+
+        # Use converted mp3 if available, else raw audio
+        send_path = mp3_path if converted else tmp_path
+        send_name = "audio.mp3" if converted else "audio.mp4"
+
         try:
             from groq import Groq
-
             client = Groq(api_key=self._api_key)
 
-            with open(tmp_path, "rb") as audio_file:
+            with open(send_path, "rb") as audio_file:
                 response = client.audio.transcriptions.create(
                     model="whisper-large-v3-turbo",
-                    file=(filename, audio_file),
+                    file=(send_name, audio_file),
                     language="sw",
                     prompt=SWAHILI_PROMPT,
                     response_format="verbose_json",
                     temperature=0.0,
                 )
 
-            # Clean transcript — remove any prompt leakage
             transcript = _clean_transcript(response.text.strip())
-
             segments = getattr(response, "segments", []) or []
             confidence = _estimate_confidence(segments)
             duration = getattr(response, "duration", 0.0) or 0.0
@@ -90,15 +109,15 @@ class WhisperASRService:
             raise RuntimeError(f"Transcription failed: {str(e)}") from e
 
         finally:
-            try:
-                os.unlink(tmp_path)
-            except Exception:
-                pass
+            for path in [tmp_path, mp3_path]:
+                try:
+                    os.unlink(path)
+                except Exception:
+                    pass
 
 
 def _clean_transcript(text: str) -> str:
     """Remove common Whisper hallucinations and prompt leakage."""
-    # Remove repeated phrases at the end
     hallucinations = [
         "tafadhali andika",
         "tafadhali andika kuhusu",
@@ -108,18 +127,14 @@ def _clean_transcript(text: str) -> str:
         "mtumiaji anasema",
         "kwa kiswahili sahihi",
         "asante kwa kutazama",
-        "usajili wa",
     ]
     text_lower = text.lower()
     for phrase in hallucinations:
         idx = text_lower.find(phrase)
-        if idx > 10:  # Only remove if not at the start
+        if idx > 10:
             text = text[:idx].strip()
             text_lower = text.lower()
-
-    # Remove trailing punctuation artifacts
-    text = text.rstrip(".,;: ")
-    return text
+    return text.rstrip(".,;: ")
 
 
 def _estimate_confidence(segments: list) -> float:
