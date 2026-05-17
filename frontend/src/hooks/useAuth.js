@@ -1,6 +1,6 @@
 // useAuth.js — Swahilisme Platform
 // Manages the full auth flow: send OTP → verify → register/login
-// Bilingual (sw/en). Phone primary, email optional.
+// Bilingual (sw/en). Phone primary, email optional
 //
 // FIX 1: API_BASE now reads REACT_APP_API_URL (same as useApi.js)
 //         Backend has NO /api/v1 prefix — auth routes are at /auth/...
