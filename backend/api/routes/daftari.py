@@ -33,12 +33,12 @@ from pydantic import BaseModel, Field
 from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from backend.db.database import get_db
-from backend.models.ledger import TransactionCategory, TransactionType, User
-from backend.services.asr.whisper_service import get_asr_service
-from backend.services.nlp.swahili_ner import get_nlp_service
-from backend.services import ledger_service
-from backend.services.pdf.health_card import generate_health_card
+from db.database import get_db
+from models.ledger import TransactionCategory, TransactionType, User
+from services.asr.whisper_service import get_asr_service
+from services.nlp.swahili_ner import get_nlp_service
+from services import ledger_service
+from services.pdf.health_card import generate_health_card
 
 router = APIRouter(prefix="/api/v1/daftari", tags=["Daftari Yangu"])
 
