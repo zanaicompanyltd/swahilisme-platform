@@ -2,7 +2,7 @@
 backend/models/ledger.py
 Transaction model for Daftari Yangu ledger entries.
 
-IMPORTANT: Base is imported from backend.db.database — the same instance
+IMPORTANT: Base is imported from db.database — the same instance
 used by user.py. Never create a second Base here.
 Exact copy of your teammate's schema — do NOT change column names.
 Tables already exist in Supabase; SQLAlchemy will just connect to them.
@@ -29,7 +29,7 @@ class TransactionType(str, PyEnum):
     GHARAMA = "gharama"
 from sqlalchemy.orm import relationship
 
-from backend.db.database import Base   # ← same Base as user.py
+from db.database import Base   # ← same Base as user.py
 
 class TransactionCategory(str, PyEnum):
     MAUZO              = "mauzo"
