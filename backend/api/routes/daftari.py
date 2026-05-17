@@ -33,7 +33,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from backend.api.routes.dashboard import query_db, scalar_db, get_db
+from api.routes.dashboard import query_db, scalar_db, get_db
 from db.database import get_db
 from models.ledger import TransactionCategory, TransactionType, User
 from services.asr.whisper_service import get_asr_service
