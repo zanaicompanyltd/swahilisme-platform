@@ -11,16 +11,16 @@ If two files define the same table name on the same Base, you get:
 The fix: import each model module exactly once, here.
 """
 
-from backend.db.database import Base  # noqa: F401 — ensures Base is created first
+from db.database import Base  # noqa: F401 — ensures Base is created first
 
-from backend.models.user import (     # noqa: F401
+from models.user import (     # noqa: F401
     User,
     OTPCode,
     UserStatus,
     OTPDeliveryMethod,
 )
 
-from backend.models.ledger import (   # noqa: F401
+from models.ledger import (   # noqa: F401
     Transaction,
     TransactionType,
 )
