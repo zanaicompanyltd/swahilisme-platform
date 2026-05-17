@@ -13,10 +13,10 @@ from sqlalchemy.orm import Session
 from typing import Optional
 import re
 
-from backend.db.database import get_db
-from backend.models.user import OTPDeliveryMethod
-from backend.services.otp_service import send_otp, verify_otp, _normalize_phone
-from backend.services.auth_service import (
+from db.database import get_db
+from models.user import OTPDeliveryMethod
+from services.otp_service import send_otp, verify_otp, _normalize_phone
+from services.auth_service import (
     register_user, login_user, refresh_access_token, get_current_user
 )
 
