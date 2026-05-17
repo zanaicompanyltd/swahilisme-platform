@@ -27,7 +27,7 @@ cymem==2.0.13
 distro==1.9.0
 dnspython==2.8.0
 email-validator==2.3.0
-fastapi==0.111.0
+fastapi==0.109.2
 filelock==3.29.0
 fonttools==4.63.0
 fsspec==2026.4.0
@@ -92,7 +92,7 @@ spacy-legacy==3.0.12
 spacy-loggers==1.0.5
 SQLAlchemy==2.0.30
 srsly==2.5.3
-starlette==0.37.2
+starlette==0.35.0
 sympy==1.14.0
 thinc==8.2.5
 tiktoken==0.12.0
