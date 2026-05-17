@@ -13,7 +13,7 @@ import httpx
 from datetime import datetime, timedelta
 from sqlalchemy.orm import Session
 
-from backend.models.user import OTPCode, OTPDeliveryMethod
+from models.user import OTPCode, OTPDeliveryMethod
 
 logger = logging.getLogger(__name__)
 
