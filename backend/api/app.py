@@ -11,7 +11,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 # ── STEP 1: create engine + Base (no model imports yet) ──────────────────
-from backend.db.database import create_all_tables
+from db.database import create_all_tables
 
 # ── STEP 2: import all models via __init__ so they register on Base ───────
 import backend.models  # noqa: F401 — triggers backend/models/__init__.py
@@ -24,9 +24,9 @@ try:
 except ImportError:
     pass
 
-from backend.db.database import init_db
-from backend.api.routes.dashboard import router as dashboard_router
-from backend.api.routes.daftari import router as daftari_router
+fromdb.database import init_db
+fromapi.routes.dashboard import router as dashboard_router
+fromapi.routes.daftari import router as daftari_router
 
 logging.basicConfig(
     level=logging.INFO,
