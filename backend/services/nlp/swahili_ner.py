@@ -15,11 +15,11 @@ from datetime import datetime, timedelta
 from typing import Optional, List
 
 try:
-    from backend.models.ledger import TransactionType, TransactionCategory
+    from models.ledger import TransactionType, TransactionCategory
 except ModuleNotFoundError:
     import sys
     sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", ".."))
-    from backend.models.ledger import TransactionType, TransactionCategory
+    from models.ledger import TransactionType, TransactionCategory
 
 logger = logging.getLogger(__name__)
 
