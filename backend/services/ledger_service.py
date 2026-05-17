@@ -10,7 +10,7 @@ from typing import Optional
 from sqlalchemy import select, func, and_
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from backend.models.ledger import (
+from models.ledger import (
     Transaction, TransactionType, TransactionCategory,
     TransactionSource, User,
 )
