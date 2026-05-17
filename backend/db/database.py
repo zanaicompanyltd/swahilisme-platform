@@ -26,7 +26,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine, async_sess
 from sqlalchemy.pool import StaticPool, NullPool
 
 # Import Base + all models so create_all() knows every table
-from backend.models.ledger import Base  # noqa: F401 — registers all models
+from models.ledger import Base  # noqa: F401 — registers all models
 
 # ── Read environment ──────────────────────────────────────────────────────────
 DB_MODE      = os.getenv("DB_MODE", "sqlite")          # "sqlite" | "postgres"
