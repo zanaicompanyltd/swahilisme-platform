@@ -10,7 +10,7 @@ from sqlalchemy import (
     Enum as SAEnum, Text
 )
 from sqlalchemy.orm import relationship
-from backend.db.database import Base   # ← single shared Base, never redefine
+from db.database import Base   # ← single shared Base, never redefine
 
 
 class UserStatus(str, enum.Enum):
