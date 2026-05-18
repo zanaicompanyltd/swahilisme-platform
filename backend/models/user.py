@@ -33,9 +33,8 @@ class User(Base):
     # Relationships
     transactions = relationship("Transaction", back_populates="user", lazy="dynamic")
     otp_codes = relationship("OTPCode", back_populates="user", lazy="dynamic")
-
-    # 💡 ADD THIS LINE TO CURE THE KEYERROR:
     products = relationship("Product", back_populates="user", lazy="dynamic")
+    business_health_cards = relationship("BusinessHealthCard", back_populates="user", lazy="dynamic")
 
     def to_dict(self) -> dict:
         return {
