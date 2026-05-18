@@ -37,6 +37,7 @@ class User(Base):
     business_health_cards = relationship("BusinessHealthCard", back_populates="user", lazy="dynamic")
     whatsapp_messages = relationship("WhatsAppMessage", back_populates="user", lazy="dynamic")
     compliance_queries = relationship("ComplianceQuery", back_populates="user", lazy="dynamic")
+    sync_queue = relationship("SyncQueue", back_populates="user", lazy="dynamic")
 
     def to_dict(self) -> dict:
         return {
