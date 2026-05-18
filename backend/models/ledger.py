@@ -1,7 +1,7 @@
 # backend/models/ledger.py
 """
 Transaction model for Daftari Yangu ledger entries.
-IMPORTANT: Base is imported from db.database — the same instance
+IMPORTANT: Base is imported from backend.db.database — the same instance
 used by user.py. Never create a second Base here.
 """
 from datetime import date, datetime
@@ -13,7 +13,7 @@ from sqlalchemy import (
     Integer, String, Text, Enum as SAEnum, JSON
 )
 from sqlalchemy.orm import relationship
-from db.database import Base  # ← Absolute import matching setup
+from db.database import Base  # ← Crucial: Using the single source of truth Base
 
 # ── Enums ─────────────────────────────────────────────────────────────────────
 
@@ -42,54 +42,66 @@ class TransactionSource(str, PyEnum):
     WHATSAPP = "whatsapp"
 
 
+# ── users ─────────────────────────────────────────────────────────────────────
+
+class User(Base):
+    __tablename__ = "users"
+
+    id            = Column(String(36), primary_key=True)
+    phone         = Column(String(20), nullable=True, unique=True)
+    name          = Column(String(200), nullable=False, default="Mtumiaji")
+    business_name = Column(String(200), nullable=False, default="Biashara Yangu")
+    business_type = Column(String(100), nullable=True)
+    location      = Column(String(200), nullable=True)
+    created_at    = Column(DateTime, default=datetime.utcnow)
+    updated_at    = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    transactions          = relationship("Transaction", back_populates="user")
+    products              = relationship("Product", back_populates="user")
+    business_health_cards = relationship("BusinessHealthCard", back_populates="user")
+    whatsapp_messages     = relationship("WhatsAppMessage", back_populates="user")
+    compliance_queries    = relationship("ComplianceQuery", back_populates="user")
+    sync_queue            = relationship("SyncQueue", back_populates="user")
+
+
 # ── transactions ──────────────────────────────────────────────────────────────
 
 class Transaction(Base):
     __tablename__ = "transactions"
 
-    # Synchronized properties matching routes (String 36 IDs)
-    id             = Column(String(36), primary_key=True)
-    user_id        = Column(String(36), ForeignKey("users.id"), nullable=False, index=True)
-    client_id      = Column(String(64), nullable=True, unique=True, index=True)
-    
-    # Enum-backed values
-    transaction_type = Column(SAEnum(TransactionType), nullable=False)
+    id               = Column(String(36), primary_key=True)
+    user_id          = Column(String(36), ForeignKey("users.id"), nullable=False, index=True)
+    client_id        = Column(String(64), nullable=True, unique=True, index=True)
+
+    # Core Core fields (Synced to match request formats)
+    type             = Column(SAEnum(TransactionType), nullable=False)
     category         = Column(SAEnum(TransactionCategory), nullable=False)
+    amount           = Column(Float, nullable=False)
+    revenue          = Column(Float, default=0.0)
+    cost             = Column(Float, default=0.0)
+    profit           = Column(Float, default=0.0)
     source           = Column(SAEnum(TransactionSource), default=TransactionSource.MANUAL)
     
-    # Numbers & Financial Data
-    amount         = Column(Float, nullable=False)
-    revenue        = Column(Float, default=0.0)
-    cost           = Column(Float, default=0.0)
-    profit         = Column(Float, default=0.0)
-    quantity       = Column(Float, nullable=True)
-    unit_price     = Column(Float, nullable=True)
-    currency       = Column(String(5), default="TZS")
+    # Text metadata fields
+    description      = Column(Text, nullable=True)
+    product_name     = Column(String(200), nullable=True)
+    quantity         = Column(Float, nullable=True)
+    unit_price       = Column(Float, nullable=True)
+    currency         = Column(String(5), default="TZS")
     
-    # Audit & Natural Language Fields
-    product_name   = Column(String(200), nullable=True)
-    product        = Column(String(200), nullable=True)  # Fallback duplicate match
-    description    = Column(Text, nullable=True)
-    raw_text       = Column(Text, nullable=True)
-    raw_transcript = Column(Text, nullable=True)
+    # Audio & NLP logs
+    raw_transcript   = Column(Text, nullable=True)
+    nlp_confidence   = Column(Float, nullable=True)
+    nlp_entities     = Column(JSON, nullable=True)
     
-    # Confidence metrics
-    asr_confidence = Column(Float, nullable=True)
-    ner_confidence = Column(Float, nullable=True)
-    nlp_confidence = Column(Float, nullable=True)
-    nlp_entities   = Column(JSON, nullable=True)
-    
-    # Sync Flags
-    synced         = Column(Boolean, default=True)
-    is_synced      = Column(Boolean, default=False)
-    local_id       = Column(String(36), nullable=True)
+    # Sync trail logic
+    is_synced        = Column(Boolean, default=False)
+    local_id         = Column(String(36), nullable=True)
     transaction_date = Column(Date, nullable=False, default=date.today)
-    timestamp      = Column(DateTime, nullable=False, default=datetime.utcnow)
-    
-    created_at     = Column(DateTime, default=datetime.utcnow)
-    updated_at     = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    timestamp        = Column(DateTime, nullable=False, default=datetime.utcnow)
+    created_at       = Column(DateTime, default=datetime.utcnow)
+    updated_at       = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
-    # Relationship
     user = relationship("User", back_populates="transactions")
 
     def to_dict(self) -> dict:
@@ -97,22 +109,21 @@ class Transaction(Base):
             "id":               self.id,
             "user_id":          self.user_id,
             "client_id":        self.client_id,
-            "transaction_type": self.transaction_type.value if hasattr(self.transaction_type, 'value') else self.transaction_type,
+            "transaction_type": self.type.value if hasattr(self.type, 'value') else self.type,
             "amount":           self.amount,
             "cost":             self.cost,
             "profit":           self.profit,
             "category":         self.category.value if hasattr(self.category, 'value') else self.category,
-            "product":          self.product_name or self.product,
+            "product":          self.product_name,
             "transaction_date": self.transaction_date.isoformat() if self.transaction_date else None,
-            "raw_text":         self.raw_text or self.raw_transcript,
-            "asr_confidence":   self.asr_confidence,
-            "ner_confidence":   self.ner_confidence,
-            "synced":           self.synced,
+            "raw_text":         self.raw_transcript,
+            "nlp_confidence":   self.nlp_confidence,
+            "is_synced":        self.is_synced,
             "created_at":       self.created_at.isoformat(),
         }
 
     def __repr__(self):
-        return f"<Transaction id={self.id} type={self.transaction_type} amount={self.amount}>"
+        return f"<Transaction id={self.id} type={self.type} amount={self.amount}>"
 
 
 # ── products ──────────────────────────────────────────────────────────────────
