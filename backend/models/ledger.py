@@ -44,24 +44,24 @@ class TransactionSource(str, PyEnum):
 
 # ── users ─────────────────────────────────────────────────────────────────────
 
-class User(Base):
-    __tablename__ = "users"
+# class User(Base):
+#     __tablename__ = "users"
 
-    id            = Column(String(36), primary_key=True)
-    phone         = Column(String(20), nullable=True, unique=True)
-    name          = Column(String(200), nullable=False, default="Mtumiaji")
-    business_name = Column(String(200), nullable=False, default="Biashara Yangu")
-    business_type = Column(String(100), nullable=True)
-    location      = Column(String(200), nullable=True)
-    created_at    = Column(DateTime, default=datetime.utcnow)
-    updated_at    = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+#     id            = Column(String(36), primary_key=True)
+#     phone         = Column(String(20), nullable=True, unique=True)
+#     name          = Column(String(200), nullable=False, default="Mtumiaji")
+#     business_name = Column(String(200), nullable=False, default="Biashara Yangu")
+#     business_type = Column(String(100), nullable=True)
+#     location      = Column(String(200), nullable=True)
+#     created_at    = Column(DateTime, default=datetime.utcnow)
+#     updated_at    = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
-    transactions          = relationship("Transaction", back_populates="user")
-    products              = relationship("Product", back_populates="user")
-    business_health_cards = relationship("BusinessHealthCard", back_populates="user")
-    whatsapp_messages     = relationship("WhatsAppMessage", back_populates="user")
-    compliance_queries    = relationship("ComplianceQuery", back_populates="user")
-    sync_queue            = relationship("SyncQueue", back_populates="user")
+#     transactions          = relationship("Transaction", back_populates="user")
+#     products              = relationship("Product", back_populates="user")
+#     business_health_cards = relationship("BusinessHealthCard", back_populates="user")
+#     whatsapp_messages     = relationship("WhatsAppMessage", back_populates="user")
+#     compliance_queries    = relationship("ComplianceQuery", back_populates="user")
+#     sync_queue            = relationship("SyncQueue", back_populates="user")
 
 
 # ── transactions ──────────────────────────────────────────────────────────────
