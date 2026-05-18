@@ -3,7 +3,7 @@ import enum
 from datetime import datetime
 from sqlalchemy import Column, Integer, String, Boolean, DateTime, Enum as SAEnum, Text
 from sqlalchemy.orm import relationship
-from backend.db.database import Base  # ← single shared Base
+from db.database import Base  # ← single shared Base
 
 class UserStatus(str, enum.Enum):
     pending = "pending"
