@@ -71,7 +71,7 @@ class Transaction(Base):
     __tablename__ = "transactions"
 
     id               = Column(String(36), primary_key=True)
-    user_id          = Column(String(36), ForeignKey("users.id"), nullable=False, index=True)
+    user_id          = Column(String(50), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
     client_id        = Column(String(64), nullable=True, unique=True, index=True)
 
     # Core Core fields (Synced to match request schema formats)
@@ -133,7 +133,7 @@ class Product(Base):
     __tablename__ = "products"
 
     id            = Column(String(36), primary_key=True)
-    user_id       = Column(String(36), ForeignKey("users.id"), nullable=False)
+    user_id       = Column(String(50), ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
     name_sw       = Column(String(200), nullable=False)
     name_en       = Column(String(200), nullable=True)
     current_stock = Column(Float, default=0.0)
@@ -150,7 +150,7 @@ class BusinessHealthCard(Base):
     __tablename__ = "business_health_cards"
 
     id            = Column(String(36), primary_key=True)
-    user_id       = Column(String(36), ForeignKey("users.id"), nullable=False)
+    user_id       = Column(String(50), ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
     period_start  = Column(Date, nullable=False)
     period_end    = Column(Date, nullable=False)
     total_revenue = Column(Float, default=0.0)
@@ -202,7 +202,7 @@ class SyncQueue(Base):
     __tablename__ = "sync_queue"
 
     id             = Column(Integer, primary_key=True, autoincrement=True)
-    user_id        = Column(String(36), ForeignKey("users.id"), nullable=False)
+    user_id       = Column(String(50), ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
     transaction_id = Column(String(36), nullable=False)
     operation      = Column(String(10), nullable=False)
     payload        = Column(JSON, nullable=False)
