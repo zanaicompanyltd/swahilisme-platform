@@ -38,16 +38,35 @@ function extractError(detail, lang = "sw") {
 
 // ── Internal fetch — always throws a proper Error with a readable message ──────
 // useAuth.js
-const apiFetch = async (url, options) => {
+// ── Internal fetch — always throws a proper Error with a readable message ──────
+const apiFetch = async (url, options = {}) => {
   try {
-    const response = await fetch(url, options);
+    // 1. Ensure headers object exists and has Content-Type set for JSON payloads
+    const headers = {
+      "Content-Type": "application/json",
+      ...(options.headers || {}),
+    };
+
+    // 2. Prepend the API_BASE to the incoming relative URL path
+    const fullUrl = `${API_BASE}${url}`;
+
+    const response = await fetch(fullUrl, { ...options, headers });
+    
     if (!response.ok) {
-      throw new Error(`HTTP error! status: ${response.status}`);
+      // Extract detailed backend message if available
+      let errorDetail;
+      try {
+        const errorJson = await response.json();
+        errorDetail = errorJson.detail;
+      } catch {
+        errorDetail = `HTTP error! status: ${response.status}`;
+      }
+      throw new Error(typeof errorDetail === 'object' ? JSON.stringify(errorDetail) : errorDetail);
     }
+    
     return await response.json();
   } catch (error) {
-    // This catches "Failed to fetch" (network errors) and manual throws
-    console.error("Network or CORS error:", error);
+    console.error("Network or API error:", error);
     throw error;
   }
 };
