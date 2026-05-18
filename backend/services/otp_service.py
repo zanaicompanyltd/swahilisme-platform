@@ -11,7 +11,9 @@ import string
 import logging
 import httpx
 from datetime import datetime, timedelta
-from sqlalchemy.orm import Session
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.future import select
+from sqlalchemy import update
 
 from models.user import OTPCode, OTPDeliveryMethod
 
@@ -150,7 +152,7 @@ async def _send_whatsapp(phone: str, otp: str, lang: str = "sw") -> bool:
 
 async def send_otp(
     phone: str,
-    db: Session,
+    db: AsyncSession,
     purpose: str = "login",
     delivery: OTPDeliveryMethod = OTPDeliveryMethod.sms,
     lang: str = "sw",
@@ -167,12 +169,17 @@ async def send_otp(
     otp   = _generate_otp()
 
     # Invalidate any existing unused OTPs for this phone + purpose
-    db.query(OTPCode).filter(
-        OTPCode.phone_number == phone,
-        OTPCode.purpose      == purpose,
-        OTPCode.is_used      == False,
-    ).update({"is_used": True})
-    db.commit()
+    stmt = (
+        update(OTPCode)
+        .where(
+            OTPCode.phone_number == phone,
+            OTPCode.purpose == purpose,
+            OTPCode.is_used == False,
+        )
+        .values(is_used=True)
+    )
+    await db.execute(stmt)
+    await db.commit()
 
     # Persist new OTP
     record = OTPCode(
@@ -184,14 +191,14 @@ async def send_otp(
         expires_at      = datetime.utcnow() + timedelta(minutes=OTP_EXPIRY_MINS),
     )
     db.add(record)
-    db.commit()
-    db.refresh(record)
+    await db.commit()
+    await db.refresh(record)
 
     # Deliver
     delivered = False
     used_method = delivery
 
-    if delivery == OTPDeliveryMethod.sms or delivery == OTPDeliveryMethod.sms:
+    if delivery == OTPDeliveryMethod.sms:
         delivered = await _send_sms(phone, otp, lang=lang)
 
     if not delivered and WA_TOKEN:
@@ -200,7 +207,7 @@ async def send_otp(
         delivered = await _send_whatsapp(phone, otp, lang=lang)
         used_method = OTPDeliveryMethod.whatsapp
         record.delivery_method = used_method
-        db.commit()
+        await db.commit()
 
     if delivery == OTPDeliveryMethod.whatsapp:
         delivered = await _send_whatsapp(phone, otp, lang=lang)
@@ -209,7 +216,7 @@ async def send_otp(
             delivered = await _send_sms(phone, otp, lang=lang)
             used_method = OTPDeliveryMethod.sms
             record.delivery_method = used_method
-            db.commit()
+            await db.commit()
 
     return {
         "success":         delivered,
@@ -224,7 +231,7 @@ async def send_otp(
 async def verify_otp(
     phone: str,
     code: str,
-    db: Session,
+    db: AsyncSession,
     purpose: str = "login",
 ) -> dict:
     """
@@ -235,37 +242,38 @@ async def verify_otp(
     """
     phone = _normalize_phone(phone)
 
-    record = (
-        db.query(OTPCode)
-        .filter(
+    stmt = (
+        select(OTPCode)
+        .where(
             OTPCode.phone_number == phone,
-            OTPCode.purpose      == purpose,
-            OTPCode.is_used      == False,
+            OTPCode.purpose == purpose,
+            OTPCode.is_used == False,
         )
         .order_by(OTPCode.created_at.desc())
-        .first()
     )
+    result = await db.execute(stmt)
+    record = result.scalars().first()
 
     if not record:
         return {"valid": False, "reason": "otp_not_found"}
 
     if datetime.utcnow() > record.expires_at:
         record.is_used = True
-        db.commit()
+        await db.commit()
         return {"valid": False, "reason": "otp_expired"}
 
     if record.attempts >= MAX_ATTEMPTS:
         record.is_used = True
-        db.commit()
+        await db.commit()
         return {"valid": False, "reason": "max_attempts_exceeded"}
 
     if record.code != code.strip():
         record.attempts += 1
-        db.commit()
+        await db.commit()
         remaining = MAX_ATTEMPTS - record.attempts
         return {"valid": False, "reason": "invalid_code", "attempts_remaining": remaining}
 
     # ✓ Valid
     record.is_used = True
-    db.commit()
+    await db.commit()
     return {"valid": True, "reason": None, "phone": phone}
