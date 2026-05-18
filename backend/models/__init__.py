@@ -1,14 +1,14 @@
 # backend/models/__init__.py
-from backend.db.database import Base  # Ensures Base initializes from the correct core
+from db.database import Base  # Ensures Base initializes from the correct core
 
-from backend.models.user import (
+from models.user import (
     User,
     OTPCode,
     UserStatus,
     OTPDeliveryMethod,
 )
 
-from backend.models.ledger import (
+from models.ledger import (
     Transaction,
     TransactionType,
 )
