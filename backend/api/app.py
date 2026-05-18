@@ -24,7 +24,7 @@ try:
 except ImportError:
     pass
 
-fromdb.database import init_db
+from db.database import init_db
 fromapi.routes.dashboard import router as dashboard_router
 fromapi.routes.daftari import router as daftari_router
 
