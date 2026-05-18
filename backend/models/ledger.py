@@ -168,7 +168,10 @@ class WhatsAppMessage(Base):
     __tablename__ = "whatsapp_messages"
 
     id        = Column(String(36), primary_key=True)
-    user_id   = Column(String(36), ForeignKey("users.id"), nullable=False)
+    
+    # 💡 BUMP THIS TO 50 to match our updated users.id size cleanly
+    user_id   = Column(String(50), ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    
     direction = Column(String(10), nullable=False)
     content   = Column(Text, nullable=False)
     timestamp = Column(DateTime, default=datetime.utcnow)
