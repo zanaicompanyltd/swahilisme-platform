@@ -12,9 +12,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from models.ledger import (
     Transaction, TransactionType, TransactionCategory,
-    TransactionSource, User,
+    TransactionSource,
 )
-
+from models.user import User
 
 # ── User ──────────────────────────────────────────────────────────────────────
 
