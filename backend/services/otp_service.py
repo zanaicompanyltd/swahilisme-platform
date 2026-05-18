@@ -124,15 +124,15 @@ async def _send_whatsapp(phone: str, otp: str, lang: str = "sw") -> bool:
         "to": phone,
         "type": "template",
         "template": {
-            "name": template_name,
-            "language": {"code": "sw" if lang == "sw" else "en_US"},
-            "components": [
-                {
-                    "type": "body",
-                    "parameters": [{"type": "text", "text": otp}],
-                }
-            ],
-        },
+            "name": "hello_world",  # 💡 Change this from template_name to "hello_world"
+            "language": {"code": "en_US"},
+        #     "components": [
+        #         {
+        #             "type": "body",
+        #             "parameters": [{"type": "text", "text": otp}],
+        #         }
+        #     ],
+        # },
     }
 
     try:
