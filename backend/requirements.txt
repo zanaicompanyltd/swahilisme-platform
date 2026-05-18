@@ -60,6 +60,7 @@ openai-whisper==20250625
 orjson==3.11.9
 packaging==26.2
 pandas==2.2.2
+passlib[bcrypt]>=1.7.4
 pillow==12.2.0
 pluggy==1.6.0
 preshed==3.0.13
