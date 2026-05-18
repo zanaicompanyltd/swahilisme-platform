@@ -25,8 +25,8 @@ except ImportError:
     pass
 
 from db.database import init_db
-fromapi.routes.dashboard import router as dashboard_router
-fromapi.routes.daftari import router as daftari_router
+from api.routes.dashboard import router as dashboard_router
+from api.routes.daftari import router as daftari_router
 
 logging.basicConfig(
     level=logging.INFO,
