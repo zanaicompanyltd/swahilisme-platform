@@ -84,37 +84,40 @@ async def transcribe_audio(
     if len(audio_bytes) == 0:
         raise HTTPException(400, "Faili la sauti liko tupu / Audio file is empty")
 
-    asr = get_asr_service()
+    # --- Start the global try block here ---
     try:
-        asr_result = await asr.transcribe(audio_bytes, filename=audio.filename or "audio.webm")
-    except RuntimeError as e:
-        raise HTTPException(500, str(e))
+        asr = get_asr_service()
+        try:
+            asr_result = await asr.transcribe(audio_bytes, filename=audio.filename or "audio.webm")
+        except RuntimeError as e:
+            raise HTTPException(500, str(e))
 
-    nlp = get_nlp_service()
-    nlp_result = nlp.extract(asr_result.transcript)
+        nlp = get_nlp_service()
+        nlp_result = nlp.extract(asr_result.transcript)
 
-    # nlp_result.description holds the CLEANED transcript from Groq
-    cleaned_transcript = nlp_result.description if nlp_result.description else asr_result.transcript
+        # nlp_result.description holds the CLEANED transcript from Groq
+        cleaned_transcript = nlp_result.description if nlp_result.description else asr_result.transcript
 
-    return TranscribeResponse(
-        transcript=cleaned_transcript,
-        raw_transcript=asr_result.transcript,
-        language=asr_result.language,
-        confidence=asr_result.confidence,
-        duration_seconds=asr_result.duration_seconds,
-        nlp={
-            "transaction_type": nlp_result.transaction_type.value if nlp_result.transaction_type else None,
-            "category":         nlp_result.category.value if nlp_result.category else None,
-            "amount":           nlp_result.amount,
-            "transaction_date": nlp_result.transaction_date.isoformat() if nlp_result.transaction_date else None,
-            "product_name":     nlp_result.product_name,
-            "quantity":         nlp_result.quantity,
-            "confidence":       nlp_result.confidence,
-            "warnings":         nlp_result.warnings,
-            "all_transactions": getattr(nlp_result, "all_transactions", []),
-        },
-    )
+        return TranscribeResponse(
+            transcript=cleaned_transcript,
+            raw_transcript=asr_result.transcript,
+            language=asr_result.language,
+            confidence=asr_result.confidence,
+            duration_seconds=asr_result.duration_seconds,
+            nlp={
+                "transaction_type": nlp_result.transaction_type.value if nlp_result.transaction_type else None,
+                "category":         nlp_result.category.value if nlp_result.category else None,
+                "amount":           nlp_result.amount,
+                "transaction_date": nlp_result.transaction_date.isoformat() if nlp_result.transaction_date else None,
+                "product_name":     nlp_result.product_name,
+                "quantity":         nlp_result.quantity,
+                "confidence":       nlp_result.confidence,
+                "warnings":         nlp_result.warnings,
+                "all_transactions": getattr(nlp_result, "all_transactions", []),
+            },
+        )
 
+    # --- The except blocks now properly close the parent try block ---
     except HTTPException:
         raise
     except Exception as e:
