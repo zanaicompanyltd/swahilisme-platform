@@ -3,10 +3,10 @@ SwahiliSME Platform — FastAPI Backend
 Registers: dashboard (1.6), daftari (1.3), health
 """
 import os
-import os
 import sys
-import logging  # ← add this line
+import logging
 from contextlib import asynccontextmanager
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -66,6 +66,7 @@ app.include_router(auth_router)
 app.include_router(daftari_router)
 app.include_router(dashboard_router)
 
+
 @app.get("/", tags=["Root"])
 async def root():
     return {
@@ -77,11 +78,6 @@ async def root():
         "tagline":  "Teknolojia kwa Lugha Yetu",
     }
 
-@app.on_event("startup")
-def on_startup():
-    """Create all DB tables on first run."""
-    create_all_tables()
-@app.get("/health", tags=["Root"])
 
 @app.get("/health", tags=["Health"])
 async def health():
