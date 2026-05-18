@@ -16,6 +16,7 @@ from db.database import create_all_tables
 # ── STEP 2: import all models via __init__ so they register on Base ───────
 import models  # noqa: F401 — triggers backend/models/__init__.py
 
+from api.routes.auth import router as auth_router
 
 # Load .env file if python-dotenv is installed
 try:
@@ -49,6 +50,7 @@ app = FastAPI(
     title="Swahilisme Platform API",
     version="1.0.0",
     description="Daftari Yangu — Voice bookkeeping for Tanzanian SMEs",
+    lifespan=lifespan
 )
 
 app.add_middleware(
@@ -83,19 +85,7 @@ def on_startup():
 
 @app.get("/health", tags=["Health"])
 async def health():
-    return {"status": "ok", "db_mode": os.getenv("DB_MODE", "sqlite")}
-    # Check DB connectivity
-    try:
-        from api.routes.dashboard import get_db
-        conn = get_db()
-        db_status = "connected" if conn else "no DATABASE_URL"
-        if conn:
-            conn.close()
-    except Exception as e:
-        db_status = f"error: {str(e)}"
-    return {"status": "healthy", "database": db_status}
-
-
-@app.get("/health")
-def health():
-    return {"status": "ok", "service": "swahilisme-api"}
+    return {
+        "status": "ok",
+        "db_mode": os.getenv("DB_MODE", "sqlite")
+    }
