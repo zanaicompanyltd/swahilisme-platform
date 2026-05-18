@@ -1,9 +1,10 @@
 # backend/models/user.py
 import enum
 from datetime import datetime
-from sqlalchemy import Column, Integer, String, Boolean, DateTime, Enum as SAEnum, Text
+# 💡 Added ForeignKey to the import list below
+from sqlalchemy import Column, Integer, String, Boolean, DateTime, Enum as SAEnum, Text, ForeignKey
 from sqlalchemy.orm import relationship
-from db.database import Base  # ← single shared Base
+from db.database import Base  
 
 class UserStatus(str, enum.Enum):
     pending = "pending"
@@ -13,14 +14,13 @@ class UserStatus(str, enum.Enum):
 class User(Base):
     __tablename__ = "users"
 
-    # Match the schema parameters referenced in routes and health cards
-    id = Column(String(36), primary_key=True)
+    id = Column(String(50), primary_key=True) # Changed from 36 to 50 to perfectly support 'demo-user-001'
     phone = Column(String(20), unique=True, nullable=False, index=True)
     phone_verified = Column(Boolean, default=False, nullable=False)
     email = Column(String(255), unique=True, nullable=True, index=True)
     email_verified = Column(Boolean, default=False, nullable=False)
     
-    name = Column(String(150), nullable=True)  # user.name used in health card
+    name = Column(String(150), nullable=True)  
     business_name = Column(String(200), nullable=True)
     business_category = Column(String(100), nullable=True)
     location = Column(String(150), nullable=True)
@@ -30,7 +30,7 @@ class User(Base):
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
-    # Relationships mapping to modules
+    # Relationships
     transactions = relationship("Transaction", back_populates="user", lazy="dynamic")
     otp_codes = relationship("OTPCode", back_populates="user", lazy="dynamic")
 
@@ -57,7 +57,10 @@ class OTPCode(Base):
     __tablename__ = "otp_codes"
 
     id = Column(Integer, primary_key=True, index=True)
-    user_id = Column(String(36), nullable=True)  # Matches String(36) ID
+    
+    # 💡 Added explicit ForeignKey mapping here linking back to users.id table
+    user_id = Column(String(50), ForeignKey("users.id", ondelete="CASCADE"), nullable=True)  
+    
     phone_number = Column(String(20), nullable=False, index=True)
     code = Column(String(8), nullable=False)
     delivery_method = Column(SAEnum(OTPDeliveryMethod), nullable=False)
@@ -67,4 +70,5 @@ class OTPCode(Base):
     expires_at = Column(DateTime, nullable=False)
     created_at = Column(DateTime, default=datetime.utcnow)
 
-    user = relationship("User", back_populates="otp_codes", foreign_keys=[user_id], primaryjoin="OTPCode.user_id == User.id")
+    # Cleaned up redundant explicit primaryjoin parameters since ForeignKey configuration handles it cleanly
+    user = relationship("User", back_populates="otp_codes")
