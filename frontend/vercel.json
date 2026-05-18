@@ -9,7 +9,7 @@
       "destination": "https://swahilisme-platform-production.up.railway.app/api/v1/$1"
     },
     {
-      "source": "/((?!auth|api/v1).*)",
+      "source": "/((?!auth|api/v1).*)" ,
       "destination": "/index.html"
     }
   ],
