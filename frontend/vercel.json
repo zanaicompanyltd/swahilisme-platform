@@ -1,12 +1,20 @@
 {
   "rewrites": [
     {
-      "source": "/(.*)",
+      "source": "/auth/(.*)",
+      "destination": "https://swahilisme-platform-production.up.railway.app/auth/$1"
+    },
+    {
+      "source": "/api/v1/(.*)",
+      "destination": "https://swahilisme-platform-production.up.railway.app/api/v1/$1"
+    },
+    {
+      "source": "/((?!auth|api/v1).*)",
       "destination": "/index.html"
     }
   ],
   "env": {
-    "REACT_APP_API_URL": "https://swahilisme-platform.up.railway.app",
+    "REACT_APP_API_URL": "https://swahilisme-platform-production.up.railway.app",
     "SKIP_PREFLIGHT_CHECK": "true",
     "TSC_COMPILE_ON_ERROR": "true",
     "DISABLE_ESLINT_PLUGIN": "true"
