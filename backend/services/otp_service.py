@@ -112,27 +112,27 @@ async def _send_sms(phone: str, otp: str, lang: str = "sw") -> bool:
 
 # ── WhatsApp delivery (Meta Cloud API) ────────────────────────────────────
 
+# ── WhatsApp delivery (Meta Cloud API) ────────────────────────────────────
+
 async def _send_whatsapp(phone: str, otp: str, lang: str = "sw") -> bool:
     """
-    Send OTP via WhatsApp using a pre-approved message template.
-    Template must be approved by Meta with {{1}} = OTP placeholder.
+    Send OTP via WhatsApp using Meta's pre-approved 'hello_world' test template.
+    Bypasses template creation restrictions during sandbox testing.
     """
-    template_name = WA_TEMPLATE_SW if lang == "sw" else WA_TEMPLATE_EN
+    # 💡 Temporarily override template_name to use Meta's default template
+    template_name = "hello_world"
 
     payload = {
         "messaging_product": "whatsapp",
         "to": phone,
         "type": "template",
         "template": {
-            "name": "hello_world",  # 💡 Change this from template_name to "hello_world"
-            "language": {"code": "en_US"},
-        #     "components": [
-        #         {
-        #             "type": "body",
-        #             "parameters": [{"type": "text", "text": otp}],
-        #         }
-        #     ],
-        # },
+            "name": template_name,
+            # 'hello_world' must be sent using the 'en_US' language code
+            "language": {"code": "en_US"}, 
+            # 💡 Note: We completely removed the "components" parameter 
+            # because 'hello_world' does not accept variable parameters like {{1}}
+        },
     }
 
     try:
@@ -146,7 +146,7 @@ async def _send_whatsapp(phone: str, otp: str, lang: str = "sw") -> bool:
                 json=payload,
             )
             resp.raise_for_status()
-            logger.info("WhatsApp OTP sent to %s", phone)
+            logger.info("WhatsApp Sandbox Test Message ('hello_world') sent to %s", phone)
             return True
     except Exception as exc:
         logger.error("WhatsApp send failed for %s: %s", phone, exc)
