@@ -35,6 +35,7 @@ class User(Base):
     otp_codes = relationship("OTPCode", back_populates="user", lazy="dynamic")
     products = relationship("Product", back_populates="user", lazy="dynamic")
     business_health_cards = relationship("BusinessHealthCard", back_populates="user", lazy="dynamic")
+    whatsapp_messages = relationship("WhatsAppMessage", back_populates="user", lazy="dynamic")
 
     def to_dict(self) -> dict:
         return {
