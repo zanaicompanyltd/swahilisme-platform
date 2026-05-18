@@ -1,66 +1,31 @@
 """
-backend/db/database.py
-
-Database engine — switches between Supabase (PostgreSQL) and SQLite
-based on environment variables.
-
-Set in your .env:
-    DB_MODE=postgres
-    DATABASE_URL=postgresql+asyncpg://...
-
-Leave blank or set DB_MODE=sqlite for local offline development.
-"""
-"""
-database.py — Single source of truth for SQLAlchemy Base and engine.
-All models must import Base from here — never create their own Base.
+backend/db/database.py — Single source of truth for SQLAlchemy Base and engine.
+All models must import Base from here. Never create their own Base.
 """
 
 import os
-from sqlalchemy import create_engine
-from sqlalchemy.orm import declarative_base, sessionmaker
-import sys
-
-# ── Path fix: works whether you run from project root OR from backend/ ────────
-_this_dir = os.path.dirname(os.path.abspath(__file__))
-_backend_dir = os.path.dirname(_this_dir)
-_project_root = os.path.dirname(_backend_dir)
-for _p in [_project_root, _backend_dir]:
-    if _p not in sys.path:
-        sys.path.insert(0, _p)
-# ─────────────────────────────────────────────────────────────────────────────
-
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine, async_sessionmaker
+from sqlalchemy.orm import declarative_base
 from sqlalchemy.pool import StaticPool, NullPool
 
-DATABASE_URL = os.getenv(
-    "DATABASE_URL",
-    "sqlite:///./swahilisme.db"   # local dev default; override with Postgres URL in prod
-)
-# Import Base + all models so create_all() knows every table
-from models.ledger import Base  # noqa: F401 — registers all models
+# ── Environment ───────────────────────────────────────────────────────────────
+DB_MODE      = os.getenv("DB_MODE", "sqlite")
+SQLITE_URL   = os.getenv("SQLITE_URL", "sqlite+aiosqlite:///./daftari.db")
+POSTGRES_URL = os.getenv("DATABASE_URL", "")
 
-# SQLite needs check_same_thread=False; ignored for other DBs
-connect_args = {"check_same_thread": False} if DATABASE_URL.startswith("sqlite") else {}
-# ── Read environment ──────────────────────────────────────────────────────────
-DB_MODE      = os.getenv("DB_MODE", "sqlite")          # "sqlite" | "postgres"
-SQLITE_URL   = os.getenv("SQLITE_URL",  "sqlite+aiosqlite:///./daftari.db")
-POSTGRES_URL = os.getenv("DATABASE_URL", "")           # Supabase URL (asyncpg)
+# ── ONE Base shared by ALL models — defined BEFORE any model imports ──────────
+Base = declarative_base()
 
-
-engine = create_engine(DATABASE_URL, connect_args=connect_args)
+# ── Engine ────────────────────────────────────────────────────────────────────
 def _build_engine():
     if DB_MODE == "postgres" and POSTGRES_URL:
-        print(f"[DB] Connecting to Supabase PostgreSQL (pooler)")
+        print("[DB] Connecting to Supabase PostgreSQL")
         return create_async_engine(
             POSTGRES_URL,
             echo=False,
-            # NullPool is required for Supabase connection pooler (port 6543)
-            # because the pooler manages its own connection pool
             poolclass=NullPool,
         )
-
-    # ── SQLite offline fallback ────────────────────────────────────────────
-    print(f"[DB] Using SQLite offline: {SQLITE_URL}")
+    print(f"[DB] Using SQLite: {SQLITE_URL}")
     return create_async_engine(
         SQLITE_URL,
         echo=False,
@@ -68,12 +33,8 @@ def _build_engine():
         poolclass=StaticPool,
     )
 
-SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
-
 engine = _build_engine()
 
-# ── ONE Base shared by ALL models ──────────────────────────────────────────
-Base = declarative_base()
 AsyncSessionLocal = async_sessionmaker(
     bind=engine,
     class_=AsyncSession,
@@ -82,23 +43,7 @@ AsyncSessionLocal = async_sessionmaker(
     autocommit=False,
 )
 
-
-async def init_db():
-    """
-    Create all tables on startup IF they don't exist yet.
-    Safe to call even when tables already exist in Supabase.
-    """
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
-
-def get_db():
-    """FastAPI dependency — yields a DB session and closes it after the request."""
-    db = SessionLocal()
-    try:
-        yield db
-    finally:
-        db.close()
-
+# ── Dependencies ──────────────────────────────────────────────────────────────
 async def get_db():
     """FastAPI dependency — yields one async session per request."""
     async with AsyncSessionLocal() as session:
@@ -111,10 +56,18 @@ async def get_db():
         finally:
             await session.close()
 
+# ── Table creation ────────────────────────────────────────────────────────────
+async def init_db():
+    """Create all tables on startup. Import models here to register them."""
+    # Import models HERE (inside the function) to avoid circular imports
+    import models.ledger  # noqa: F401
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
 
 def create_all_tables():
-    """Call once at startup to create any missing tables."""
-    # Import all model modules here so Base knows about every table
-    import backend.models.user    # noqa: F401
-    import backend.models.ledger  # noqa: F401
-    Base.metadata.create_all(bind=engine)
+    """Sync version — only used if needed outside async context."""
+    import models.ledger  # noqa: F401
+    from sqlalchemy import create_engine as _sync_engine
+    sync_url = SQLITE_URL.replace("sqlite+aiosqlite", "sqlite") if "sqlite" in SQLITE_URL else POSTGRES_URL
+    _engine = _sync_engine(sync_url, connect_args={"check_same_thread": False} if "sqlite" in sync_url else {})
+    Base.metadata.create_all(bind=_engine)
