@@ -186,7 +186,7 @@ class ComplianceQuery(Base):
     __tablename__ = "compliance_queries"
 
     id          = Column(String(36), primary_key=True)
-    user_id     = Column(String(36), ForeignKey("users.id"), nullable=False)
+    user_id = Column(String(50), ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
     question_sw = Column(Text, nullable=False)
     answer_sw   = Column(Text, nullable=True)
     confidence  = Column(Float, nullable=True)
