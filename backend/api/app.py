@@ -14,7 +14,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from db.database import create_all_tables
 
 # ── STEP 2: import all models via __init__ so they register on Base ───────
-import backend.models  # noqa: F401 — triggers backend/models/__init__.py
+import models  # noqa: F401 — triggers backend/models/__init__.py
 
 
 # Load .env file if python-dotenv is installed
