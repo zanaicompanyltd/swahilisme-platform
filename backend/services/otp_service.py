@@ -20,15 +20,20 @@ from models.user import OTPCode, OTPDeliveryMethod
 logger = logging.getLogger(__name__)
 
 # ── Config ────────────────────────────────────────────────────────────────
-OTP_LENGTH       = 6
+OTP_LENGTH        = 6
 OTP_EXPIRY_MINS  = 10
 MAX_ATTEMPTS     = 3
 
 # Africa's Talking
-AT_API_KEY       = os.getenv("AFRICASTALKING_API_KEY", "")
+# 💡 Added your Sandbox API Key as the default fallback
+AT_API_KEY       = os.getenv("AFRICASTALKING_API_KEY", "atsk_d5819c457354e4780d75d2a7712f4e8400985435fda6a41530ebc62976f6090f8b7dc8f0")
 AT_USERNAME      = os.getenv("AFRICASTALKING_USERNAME", "sandbox")
-AT_SENDER_ID     = os.getenv("AFRICASTALKING_SENDER_ID", "SWAHILISME")
-AT_SMS_URL       = "https://api.africastalking.com/version1/messaging"
+
+# 💡 CHANGED: Sandbox requires 'sandbox' as the sender ID instead of 'SWAHILISME'
+AT_SENDER_ID     = os.getenv("AFRICASTALKING_SENDER_ID", "sandbox")
+
+# 💡 CHANGED: Swapped production URL to the dedicated sandbox API endpoint
+AT_SMS_URL       = "https://api.sandbox.africastalking.com/version1/messaging"
 
 # Meta WhatsApp Cloud API
 WA_TOKEN         = os.getenv("WHATSAPP_TOKEN", "")
