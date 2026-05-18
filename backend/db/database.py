@@ -24,6 +24,10 @@ def _build_engine():
             POSTGRES_URL,
             echo=False,
             poolclass=NullPool,
+            # 💡 Added connect_args to disable the statement cache for PgBouncer compatibility
+            connect_args={
+                "prepared_statement_cache_size": 0
+            },
         )
     print(f"[DB] Using SQLite: {SQLITE_URL}")
     return create_async_engine(
@@ -32,16 +36,6 @@ def _build_engine():
         connect_args={"check_same_thread": False},
         poolclass=StaticPool,
     )
-
-engine = _build_engine()
-
-AsyncSessionLocal = async_sessionmaker(
-    bind=engine,
-    class_=AsyncSession,
-    expire_on_commit=False,
-    autoflush=False,
-    autocommit=False,
-)
 
 # ── Dependencies ──────────────────────────────────────────────────────────────
 async def get_db():
