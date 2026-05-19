@@ -26,8 +26,8 @@ MAX_ATTEMPTS     = 3
 
 # Africa's Talking
 # 💡 Added your Sandbox API Key as the default fallback
-AT_API_KEY       = os.getenv("AFRICASTALKING_API_KEY", "atsk_d5819c457354e4780d75d2a7712f4e8400985435fda6a41530ebc62976f6090f8b7dc8f0")
-AT_USERNAME      = os.getenv("AFRICASTALKING_USERNAME", "sandbox")
+AT_API_KEY = os.getenv("AFRICASTALKING_API_KEY", "atsk_d5819c457354e4780d75d2a7712f4e8400985435fda6a41530ebc62976f6090f8b7dc8f0").strip('"')
+AT_USERNAME = os.getenv("AFRICASTALKING_USERNAME", "sandbox").strip('"')
 
 # 💡 CHANGED: Sandbox requires 'sandbox' as the sender ID instead of 'SWAHILISME'
 AT_SENDER_ID     = "sandbox"
