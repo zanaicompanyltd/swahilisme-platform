@@ -156,7 +156,7 @@ async def api_register(body: RegisterRequest, db: Session = Depends(get_db)):
     phone = _normalize_phone(body.phone_number)
 
     try:
-        user = register_user(
+        user = await register_user(
             phone_number      = phone,
             full_name         = body.full_name,
             db                = db,
