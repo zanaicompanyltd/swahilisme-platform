@@ -176,7 +176,7 @@ async def api_register(body: RegisterRequest, db: Session = Depends(get_db)):
             detail=error_map.get(str(exc), {"sw": "Hitilafu.", "en": "Error."}),
         )
 
-    login_result = login_user(phone, db)
+    login_result = await login_user(phone, db)
     return {
         "message": {"sw": "Umesajiliwa kwa mafanikio!", "en": "Registration successful!"},
         **login_result,
