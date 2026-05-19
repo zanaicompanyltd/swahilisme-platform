@@ -14,7 +14,7 @@ class UserStatus(str, enum.Enum):
 class User(Base):
     __tablename__ = "users"
 
-    id = Column(String(50), primary key=True)
+    id = Column(String(50), primary_key=True)
     phone = Column(String(20), unique=True, nullable=True)
     name = Column(String(100), nullable=True)
     business_name = Column(String(200), nullable=True)
