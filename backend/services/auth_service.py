@@ -90,7 +90,7 @@ async def register_user(
         phone_number      = phone_number,
         phone_verified    = True,           # OTP already validated
         email             = email or None,
-        full_name         = full_name,
+        name              = full_name,
         business_name     = business_name or None,
         business_category = business_category or None,
         location          = location or None,
