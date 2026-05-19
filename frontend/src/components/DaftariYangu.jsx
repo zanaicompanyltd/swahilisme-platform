@@ -222,23 +222,45 @@ export default function DaftariYangu() {
   }, [analyticsLoaded]); // eslint-disable-line
 
   useEffect(() => { reload(); }, [reload]);
+
   useEffect(() => { if (tab === "takwimu") reloadAnalytics(); }, [tab]); // eslint-disable-line
+  
+  // ── Sync on startup AND when coming back online ──────────────────────────────
   useEffect(() => {
-    const go = async () => {
-      if (getOfflineCount() > 0) {
-        showToast("🔄 Inasawazisha…", "info");
+    async function runSync() {
+      const count = getOfflineCount();
+      if (count === 0) return;
+      if (!navigator.onLine) return;
+  
+      showToast(`🔄 Inasawazisha miamala ${count}…`, "info");
+      try {
         const res = await syncOfflineQueue(USER_ID);
-        if (res.synced > 0) { showToast(`✅ ${res.synced} imesawazishwa`, "success"); reload(); }
+        if (res.synced > 0) {
+          showToast(`✅ Miamala ${res.synced} imesawazishwa!`, "success");
+          setOff(0);
+          setAL(false);
+          reload();
+        }
+        if (res.failed > 0) {
+          showToast(`⚠️ Miamala ${res.failed} imeshindwa`, "warning");
+        }
+      } catch (e) {
+        showToast("⚠️ " + e.message, "error");
       }
-    };
-    window.addEventListener("online", go);
-    return () => window.removeEventListener("online", go);
-  }, [reload]);
+      setOff(getOfflineCount());
+    }
+  
+    runSync(); // ← runs immediately on mount (fixes the stuck queue)
+    window.addEventListener("online", runSync);
+    return () => window.removeEventListener("online", runSync);
+  }, []); // eslint-disable-line
+  
   useEffect(() => {
-    if (recorder.audioBlob && recorder.state === "processing") handleTranscribe(recorder.audioBlob);
-  }, [recorder.audioBlob, recorder.state]); // eslint-disable-line
+    if (recorder.audioBlob && recorder.isProcessing) handleTranscribe(recorder.audioBlob);
+  }, [recorder.audioBlob, recorder.isProcessing]); // eslint-disable-line
+  
   useEffect(() => {
-    if (tab === "mshauri") aiEndRef.current?.scrollIntoView({ behavior:"smooth" });
+    if (tab === "mshauri") aiEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [aiMessages, tab]);
 
   // ── Transcribe ──────────────────────────────────────────────────────────────
@@ -380,10 +402,40 @@ export default function DaftariYangu() {
           </div>
           <div style={{ display:"flex", gap:6, alignItems:"center" }}>
             {offlineCount > 0 && (
-              <span style={S.badge}>⏳ {offlineCount}</span>
+              <button
+                style={{
+                  ...S.badge,
+                  cursor: "pointer",
+                  border: "none",
+                  background: "rgba(255,255,255,0.25)",
+                  fontFamily: "inherit",
+                }}
+                onClick={async () => {
+                  if (!navigator.onLine) {
+                    showToast("📴 Hakuna mtandao — subiri uunganisho", "warning");
+                    return;
+                  }
+                  showToast(`🔄 Inasawazisha miamala ${offlineCount}…`, "info");
+                  try {
+                    const res = await syncOfflineQueue(USER_ID);
+                    if (res.synced > 0) {
+                      showToast(`✅ Miamala ${res.synced} imesawazishwa!`, "success");
+                      setAL(false);
+                      reload();
+                    }
+                    if (res.failed > 0) {
+                      showToast(`⚠️ Miamala ${res.failed} imeshindwa`, "warning");
+                    }
+                  } catch (e) {
+                    showToast("⚠️ " + e.message, "error");
+                  }
+                  setOff(getOfflineCount());
+                }}
+              >
+                ⏳ {offlineCount} · Sawazisha
+              </button>
             )}
           </div>
-        </div>
       </header>
 
       {/* ── Toast ──────────────────────────────────────────────────────────── */}
