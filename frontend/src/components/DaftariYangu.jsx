@@ -298,7 +298,7 @@ export default function DaftariYangu() {
         showToast("✅ Muamala umehifadhiwa!", "success");
       }
       setTranscript(""); setNlp(null); setAllTxs([]); setForm(EMPTY_FORM); recorder.reset();
-      setAnalyticsLoading(false); setTab("daftari"); reload();
+      setALd(false); setAL(false); setTab("daftari"); reload();
     } catch (err) {
       showToast("❌ " + (err.message || "Hitilafu ya kuhifadhi"), "error");
     } finally { setSaving(false); }
@@ -325,7 +325,7 @@ export default function DaftariYangu() {
     if (failed === 0) showToast(`✅ Miamala ${saved} imehifadhiwa!`, "success");
     else showToast(`⚠️ ${saved} imehifadhiwa, ${failed} imeshindwa`, "warning");
     setTranscript(""); setNlp(null); setAllTxs([]); setForm(EMPTY_FORM); recorder.reset();
-    setAnalyticsLoading(false); setTab("daftari"); reload();
+    setALd(false); setAL(false); setTab("daftari"); reload();
   }
 
   async function handleDelete(id) {
@@ -805,7 +805,7 @@ export default function DaftariYangu() {
 
             <button
               style={{ ...S.btnOutline, width:"100%", marginBottom:12 }}
-              onClick={() => { setAnalyticsLoading(false); reloadAnalytics(); }}
+              onClick={() => { setAL(false); reloadAnalytics(); }}
               disabled={analyticsLoading}
             >
               {analyticsLoading ? "⏳ Inapakia…" : "🔄 Onyesha Upya Takwimu"}
