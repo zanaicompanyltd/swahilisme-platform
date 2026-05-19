@@ -746,7 +746,7 @@ export default function DaftariYangu() {
                       <Tooltip formatter={(v,name)=>[`TZS ${Number(v).toLocaleString()}`,name]} contentStyle={{ borderRadius:10, border:"none", boxShadow:"0 4px 12px rgba(0,0,0,0.1)" }} />
                       <Legend wrapperStyle={{ fontSize:12 }} />
                       <Area type="monotone" dataKey="Mapato"  stroke={T.greenMid} fill="url(#gR)" strokeWidth={2.5} />
-                      <Area type="monotone" dataKey="Gharama" stroke={T.red}      fill="none"      strokeWidth={2} strokeDasharray="5 5" />
+                      <Area type="monotone" dataKey="Gharama" stroke={T.red}      fill="none"       strokeWidth={2} strokeDasharray="5 5" />
                       <Area type="monotone" dataKey="Faida"   stroke={T.blue}     fill="url(#gP)" strokeWidth={2.5} />
                     </AreaChart>
                   </ResponsiveContainer>
@@ -808,7 +808,7 @@ export default function DaftariYangu() {
 
             <button
               style={{ ...S.btnOutline, width:"100%", marginBottom:12 }}
-              onClick={() => { setAL(false); reloadAnalytics(); }}
+              onClick={() => { setAnalyticsLoading(false); reloadAnalytics(); }}
               disabled={analyticsLoading}
             >
               {analyticsLoading ? "⏳ Inapakia…" : "🔄 Onyesha Upya Takwimu"}
@@ -954,6 +954,9 @@ export default function DaftariYangu() {
           </button>
         ))}
       </nav>
+      
+      {/* Inject global inline CSS once component mounts */}
+      <style>{CSS}</style>
     </div>
   );
 }
@@ -1046,3 +1049,5 @@ const CSS = `
   button:active { transform: scale(0.97); }
   ::-webkit-scrollbar { width: 4px; } ::-webkit-scrollbar-thumb { background: #d1d5db; border-radius: 4px; }
 `;
+
+export default DaftariYangu;
