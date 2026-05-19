@@ -113,12 +113,12 @@ async def register_user(
 
 # ── Login ─────────────────────────────────────────────────────────────────
 
-async def login_user(phone_number: str, db: AsyncSession):
+# ── /app/services/auth_service.py ──────────────────────────────────────────
+
+async def login_user(phone_number: str, db: AsyncSession): # Ensure AsyncSession hint
     """
     Called after OTP is verified. Returns JWT tokens.
-    If user doesn't exist yet, returns needs_registration=True.
     """
-    #  NEW ASYNC COMPATIBLE SYNTAX:
     stmt = select(User).where(User.phone_number == phone_number) 
     result = await db.execute(stmt)
     user = result.scalars().first()
@@ -132,7 +132,9 @@ async def login_user(phone_number: str, db: AsyncSession):
     # Update last login
     user.last_login_at = datetime.utcnow()
     user.phone_verified = True
-    db.commit()
+    
+    # 💡 CHANGED: Await the database session commit here!
+    await db.commit() 
 
     access_token  = create_access_token(user.id, user.phone_number)
     refresh_token = create_refresh_token(user.id)
