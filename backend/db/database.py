@@ -25,7 +25,7 @@ def _build_engine():
             echo=False,
             poolclass=NullPool,
             connect_args={
-                "prepared_statement_cache_size": 0
+                "statement_cache_size": 0  #  Fixed typo here
             },
         )
     print(f"[DB] Using SQLite: {SQLITE_URL}")
@@ -35,17 +35,6 @@ def _build_engine():
         connect_args={"check_same_thread": False},
         poolclass=StaticPool,
     )
-
-# Assign the built engine out to the global module namespace
-engine = _build_engine()
-
-AsyncSessionLocal = async_sessionmaker(
-    bind=engine,
-    class_=AsyncSession,
-    expire_on_commit=False,
-    autoflush=False,
-    autocommit=False,
-)
 
 # ── Dependencies ──────────────────────────────────────────────────────────────
 async def get_db():
