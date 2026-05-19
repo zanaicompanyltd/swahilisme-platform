@@ -2,7 +2,7 @@
 import enum
 from datetime import datetime
 # 💡 Added ForeignKey to the import list below
-from sqlalchemy import Column, Integer, String, Boolean, DateTime, Enum as SAEnum, Text, ForeignKey
+from sqlalchemy import Column, Integer, String, func, Boolean, DateTime, Enum as SAEnum, Text, ForeignKey
 from sqlalchemy.orm import relationship
 from db.database import Base  
 
