@@ -76,7 +76,7 @@ async def register_user(
     Raises ValueError for duplicate phone/email.
     """
     # Duplicate check
-    result = await db.execute(select(User).where(User.phone == phone_number))
+    result = await db.execute(select(User).where(User.phone_number == phone_number))
     existing = result.scalars().first()
     if existing:
         raise ValueError("phone_already_registered")
