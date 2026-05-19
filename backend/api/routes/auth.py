@@ -136,7 +136,8 @@ async def api_verify_otp(body: VerifyOTPRequest, db: Session = Depends(get_db)):
 
     # OTP valid — attempt login
     try:
-        login_result = login_user(phone, db)
+        # Inside api_verify_otp:
+        login_result = await login_user(phone, db)  # 💡 Added 'await' here
     except PermissionError as exc:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
