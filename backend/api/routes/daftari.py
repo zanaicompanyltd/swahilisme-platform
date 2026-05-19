@@ -42,7 +42,7 @@ from services import ledger_service
 from services.pdf.health_card import generate_health_card
 from models.user import User
 
-router = APIRouter(prefix="/api/v1/daftari", tags=["Daftari Yangu"])
+router = APIRouter(prefix="/daftari", tags=["Daftari Yangu"])
 
 
 # ── Pydantic models ───────────────────────────────────────────────────────────
@@ -416,3 +416,29 @@ def _generate_health_card_fallback(user, summary: dict, days: int) -> bytes:
 
     except ImportError:
         raise HTTPException(501, "reportlab not installed. Run: pip install reportlab")
+
+class TextTransactionRequest(BaseModel):
+    user_id: str
+    text: str
+
+@router.post("/text", summary="Ingiza muamala kwa maandishi ya kawaida (Text NLP)")
+async def transcribe_text_input(body: TextTransactionRequest):
+    try:
+        nlp = get_nlp_service()
+        nlp_result = nlp.extract(body.text)
+        
+        return {
+            "success": True,
+            "raw_text": body.text,
+            "nlp": {
+                "transaction_type": nlp_result.transaction_type.value if nlp_result.transaction_type else None,
+                "category":         nlp_result.category.value if nlp_result.category else None,
+                "amount":           nlp_result.amount,
+                "transaction_date": nlp_result.transaction_date.isoformat() if nlp_result.transaction_date else None,
+                "product_name":     nlp_result.product_name,
+                "quantity":         nlp_result.quantity,
+                "confidence":       nlp_result.confidence
+            }
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
