@@ -81,7 +81,7 @@ const AI_SUGGESTIONS = [
 
 // DaftariYangu.jsx
 export async function askMshauri(question, summary) {
-  const apiKey = process.env.REACT_APP_GEMINI_KEY; // put in .env
+  const apiKey = process.env.REACT_APP_GEMINI_KEY;
   const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`;
 
   const systemPrompt = `
@@ -92,9 +92,14 @@ export async function askMshauri(question, summary) {
   `;
 
   const body = {
+    system_instruction: {          // ✅ Correct Gemini field
+      parts: [{ text: systemPrompt }]
+    },
     contents: [
-      { role: "system", parts: [{ text: systemPrompt }] },
-      { role: "user", parts: [{ text: question }] }
+      {
+        role: "user",              // ✅ Only "user" and "model" are valid roles
+        parts: [{ text: question }]
+      }
     ]
   };
 
@@ -105,10 +110,14 @@ export async function askMshauri(question, summary) {
       body: JSON.stringify(body),
     });
     const data = await res.json();
+
+    // Add this temporarily to debug:
+    console.log("Gemini response:", JSON.stringify(data, null, 2));
+
     return data.candidates?.[0]?.content?.parts?.[0]?.text || "⚠️ Hakuna jibu.";
   } catch (err) {
     console.error("Gemini error:", err);
-    return "⚠️ Hitilafu ya mtandao au API.";
+    return "⚠️ Hitilafu ya mtandao wa AI.";
   }
 }
 
