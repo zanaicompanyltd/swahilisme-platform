@@ -462,34 +462,51 @@ def _generate_health_card_fallback(user, summary: dict, days: int) -> bytes:
 class TextTransactionRequest(BaseModel):
     user_id: str
     text: str
+    # ✅ Optional structured fields from manual form (prefixed with _)
+    # When present, use directly instead of relying on NLP
+    _type: Optional[str] = None
+    _category: Optional[str] = None
+    _amount: Optional[float] = None
+    _product_name: Optional[str] = None
+    _description: Optional[str] = None
+    _transaction_date: Optional[str] = None
+    _quantity: Optional[float] = None
 
-@router.post("/text", summary="Ingiza muamala kwa maandishi ya kawaida (Text NLP)")
+    model_config = {"populate_by_name": True}
+
+@router.post("/text")
 async def create_transaction_from_text(
     body: TextTransactionRequest,
     db: AsyncSession = Depends(get_db),
 ):
     try:
-        nlp = get_nlp_service()
-        nlp_result = nlp.extract(body.text)
+        # Use structured fields if provided (manual form), else run NLP
+        has_structured = body._amount and body._amount > 0
 
-        # ✅ Determine type string
-        tx_type_str = "mapato"
-        if nlp_result.transaction_type:
-            val = nlp_result.transaction_type.value if hasattr(nlp_result.transaction_type, 'value') else str(nlp_result.transaction_type)
-            if val in ("gharama", "expense"):
-                tx_type_str = "gharama"
-
-        amount = float(nlp_result.amount or 0)
-        if amount <= 0:
-            # Try to parse amount from text directly as fallback
-            import re
-            m = re.search(r'(\d[\d,]*)', body.text)
-            if m:
-                amount = float(m.group(1).replace(",", ""))
-
-        category = "nyingine_mapato" if tx_type_str == "mapato" else "nyingine_gharama"
-        if nlp_result.category:
-            category = nlp_result.category.value if hasattr(nlp_result.category, 'value') else str(nlp_result.category)
+        if has_structured:
+            tx_type_str = body._type or "mapato"
+            category    = body._category or ("nyingine_mapato" if tx_type_str == "mapato" else "nyingine_gharama")
+            amount      = float(body._amount)
+            product     = body._product_name
+            description = body._description or body.text
+            quantity    = body._quantity
+            tx_date     = None
+            if body._transaction_date:
+                try:
+                    tx_date = datetime.strptime(body._transaction_date, "%Y-%m-%d").date()
+                except ValueError:
+                    tx_date = None
+        else:
+            nlp         = get_nlp_service()
+            nlp_result  = nlp.extract(body.text)
+            val         = nlp_result.transaction_type
+            tx_type_str = "gharama" if (val and ("gharama" in str(val).lower() or "expense" in str(val).lower())) else "mapato"
+            amount      = float(nlp_result.amount or 0)
+            category    = (nlp_result.category.value if hasattr(nlp_result.category, "value") else str(nlp_result.category)) if nlp_result.category else ("nyingine_mapato" if tx_type_str == "mapato" else "nyingine_gharama")
+            product     = nlp_result.product_name
+            description = body.text
+            quantity    = nlp_result.quantity
+            tx_date     = nlp_result.transaction_date.date() if nlp_result.transaction_date else None
 
         revenue = amount if tx_type_str == "mapato" else 0.0
         cost    = amount if tx_type_str == "gharama" else 0.0
@@ -500,48 +517,40 @@ async def create_transaction_from_text(
         import uuid as uuid_lib
         from sqlalchemy import text as sql_text
 
-        tx_id   = str(uuid_lib.uuid4())
-        tx_date = nlp_result.transaction_date.date() if nlp_result.transaction_date else None
+        tx_id = str(uuid_lib.uuid4())
 
         await db.execute(sql_text("""
             INSERT INTO transactions (
                 id, user_id, type, category, amount, revenue, cost, profit,
-                description, product_name, quantity,
-                source, raw_transcript, nlp_confidence,
-                is_synced, transaction_date, currency
+                description, product_name, quantity, source,
+                raw_transcript, is_synced, transaction_date, currency
             ) VALUES (
                 :id, :user_id, :type, :category, :amount, :revenue, :cost, :profit,
-                :description, :product_name, :quantity,
-                'manual', :raw_transcript, :nlp_confidence,
-                true, COALESCE(:transaction_date, CURRENT_DATE), 'TZS'
+                :description, :product_name, :quantity, 'manual',
+                :raw_transcript, true, COALESCE(:transaction_date, CURRENT_DATE), 'TZS'
             )
         """), {
-            "id":             tx_id,
-            "user_id":        body.user_id,
-            "type":           tx_type_str,
-            "category":       category,
-            "amount":         amount,
-            "revenue":        revenue,
-            "cost":           cost,
-            "profit":         profit,
-            "description":    body.text[:500],
-            "product_name":   nlp_result.product_name,
-            "quantity":       nlp_result.quantity,
-            "raw_transcript": body.text,
-            "nlp_confidence": nlp_result.confidence,
+            "id":               tx_id,
+            "user_id":          body.user_id,
+            "type":             tx_type_str,
+            "category":         category,
+            "amount":           amount,
+            "revenue":          revenue,
+            "cost":             cost,
+            "profit":           profit,
+            "description":      description,
+            "product_name":     product,
+            "quantity":         quantity,
+            "raw_transcript":   body.text,
             "transaction_date": tx_date,
         })
         await db.commit()
 
         return {
-            "success":  True,
-            "id":       tx_id,
-            "type":     tx_type_str,
-            "category": category,
-            "amount":   amount,
-            "revenue":  revenue,
-            "cost":     cost,
-            "profit":   profit,
+            "success": True,
+            "id":      tx_id,
+            "type":    tx_type_str,
+            "amount":  amount,
         }
 
     except Exception as e:
