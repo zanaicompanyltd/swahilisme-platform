@@ -130,30 +130,36 @@ export async function transcribeAudio(audioBlob, userId) {
   return data;
 }
 
-export async function createTransaction(payload, userId) {
-  // 1. Unganisha userId ndani ya payload ili ikidhi vigezo vya TextTransactionRequest ya backend
-  const completePayload = { ...payload, user_id: userId };
-
+export async function createTransaction(payload) {
   if (!navigator.onLine) {
-    enqueueOffline(completePayload);
+    enqueueOffline(payload);
     return {
       success: true,
       offline: true,
       message: "Rekodi imehifadhiwa nje ya mtandao.",
-      transaction: { ...completePayload, id: `offline_${Date.now()}` },
+      transaction: { ...payload, id: `offline_${Date.now()}` },
     };
   }
   try {
-    // 2. Tuma completePayload yenye 'user_id' na 'text' kwenda kwenye backend kama safi kabisa ya JSON
-    return await apiFetch("/daftari/text", { method: "POST", body: JSON.stringify(completePayload) });
+    // KAMA payload ina ufunguo wa 'text', inamaanisha ni NLP (kutoka kwenye AI input)
+    if (payload.text) {
+      return await apiFetch("/daftari/text", { method: "POST", body: JSON.stringify(payload) });
+    }
+    
+    // KAMA payload haina 'text' bali ina 'amount' na 'category', tuma kwenye endpoint ya miamala ya kawaida
+    // Hii itazuia kosa la 422 kwa sababu hapa tunapita kwenye endpoint inayouelewa muundo huu!
+    return await apiFetch(`/daftari/transactions?user_id=${encodeURIComponent(payload.user_id)}`, { 
+      method: "POST", 
+      body: JSON.stringify(payload) 
+    });
   } catch (err) {
     if (err.message.includes("Failed to fetch") || err.message.includes("NetworkError")) {
-      enqueueOffline(completePayload);
+      enqueueOffline(payload);
       return {
         success: true,
         offline: true,
         message: "Rekodi imehifadhiwa nje ya mtandao.",
-        transaction: { ...completePayload, id: `offline_${Date.now()}` },
+        transaction: { ...payload, id: `offline_${Date.now()}` },
       };
     }
     throw err;
