@@ -14,21 +14,20 @@ class UserStatus(str, enum.Enum):
 class User(Base):
     __tablename__ = "users"
 
-    id = Column(String(50), primary_key=True) # Changed from 36 to 50 to perfectly support 'demo-user-001'
-    phone = Column(String(20), unique=True, nullable=False, index=True)
-    phone_verified = Column(Boolean, default=False, nullable=False)
-    email = Column(String(255), unique=True, nullable=True, index=True)
-    email_verified = Column(Boolean, default=False, nullable=False)
-    
-    name = Column(String(150), nullable=True)  
+    id = Column(String(50), primary key=True)
+    phone = Column(String(20), unique=True, nullable=True)
+    name = Column(String(100), nullable=True)
     business_name = Column(String(200), nullable=True)
-    business_category = Column(String(100), nullable=True)
-    location = Column(String(150), nullable=True)
-    preferred_lang = Column(String(5), default="sw", nullable=False)
-    
-    status = Column(SAEnum(UserStatus), default=UserStatus.pending, nullable=False)
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    business_type = Column(String(100), nullable=True) # Changed from business_category
+    location = Column(String(200), nullable=True)
+    whatsapp_opt_in = Column(Boolean, default=False)
+    created_at = Column(DateTime(timezone=True), default=func.now())
+    # phone_verified = Column(Boolean, default=False, nullable=False)
+    # email = Column(String(255), unique=True, nullable=True, index=True)
+    # email_verified = Column(Boolean, default=False, nullable=False)
+    # preferred_lang = Column(String(5), default="sw", nullable=False) 
+    # status = Column(SAEnum(UserStatus), default=UserStatus.pending, nullable=False)  
+    # updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
     # Relationships
     transactions = relationship("Transaction", back_populates="user", lazy="dynamic")
