@@ -69,6 +69,7 @@ def _normalize_phone(phone: str) -> str:
 
 # ── SMS delivery (Africa's Talking) ──────────────────────────────────────
 
+
 async def _send_sms(phone: str, otp: str, lang: str = "sw") -> bool:
     if lang == "sw":
         message = (
@@ -81,6 +82,18 @@ async def _send_sms(phone: str, otp: str, lang: str = "sw") -> bool:
             f"Valid for {OTP_EXPIRY_MINS} minutes. Do not share with anyone."
         )
 
+    # 💡 Prepare payload data
+    payload_data = {
+        "username": AT_USERNAME,
+        "to":       phone,
+        "message":  message,
+    }
+
+    # 💡 ONLY send the 'from' parameter if we are NOT in the sandbox.
+    # The sandbox API throws 'InvalidSenderId' if you pass strings like 'sandbox' or 'SWAHILISME'.
+    if AT_USERNAME != "sandbox" and AT_SENDER_ID:
+        payload_data["from"] = AT_SENDER_ID
+
     try:
         async with httpx.AsyncClient(timeout=10) as client:
             resp = await client.post(
@@ -90,27 +103,22 @@ async def _send_sms(phone: str, otp: str, lang: str = "sw") -> bool:
                     "Accept": "application/json",
                     "Content-Type": "application/x-www-form-urlencoded",
                 },
-                data={
-                    "username": AT_USERNAME,
-                    "to":       phone,
-                    "message":  message,
-                    "from":     AT_SENDER_ID,
-                },
+                data=payload_data, # 💡 Use the dynamically adjusted payload data
             )
             resp.raise_for_status()
             data = resp.json()
             recipients = data.get("SMSMessageData", {}).get("Recipients", [])
+            
             if recipients and recipients[0].get("status") == "Success":
                 logger.info("SMS OTP sent to %s", phone)
                 return True
+                
             logger.warning("SMS delivery issue: %s", data)
             return False
     except Exception as exc:
         logger.error("SMS send failed for %s: %s", phone, exc)
         return False
 
-
-# ── WhatsApp delivery (Meta Cloud API) ────────────────────────────────────
 
 # ── WhatsApp delivery (Meta Cloud API) ────────────────────────────────────
 
