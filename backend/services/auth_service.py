@@ -61,10 +61,12 @@ def decode_token(token: str) -> Optional[dict]:
 
 # ── Registration ──────────────────────────────────────────────────────────
 
+# ── /app/services/auth_service.py ──────────────────────────────────────────
+
 async def register_user(
     phone_number: str,
     full_name: str,
-    db: Session,
+    db: AsyncSession,  # Ensure type hint reflects AsyncSession
     business_name: str  = "",
     business_category: str = "",
     location: str       = "",
@@ -75,32 +77,37 @@ async def register_user(
     Create a new user (phone already verified by OTP at this point).
     Raises ValueError for duplicate phone/email.
     """
-    # Duplicate check
+    # Duplicate phone check
     result = await db.execute(select(User).where(User.phone_number == phone_number))
     existing = result.scalars().first()
     if existing:
         raise ValueError("phone_already_registered")
 
+    # 💡 CHANGED: Fixed the email duplicate check to use Async-safe execution syntax
     if email:
-        dup_email = db.query(User).filter(User.email == email).first()
+        email_result = await db.execute(select(User).where(User.email == email))
+        dup_email = email_result.scalars().first()
         if dup_email:
             raise ValueError("email_already_registered")
 
+    # 💡 CHANGED: Cleaned column assignments and removed getattr()
     user = User(
+        id                = phone_number,  # Or your custom ID generator
         phone_number      = phone_number,
-        phone_verified    = True,           # OTP already validated
+        phone_verified    = True,           
         email             = email or None,
         name              = full_name,
         business_name     = business_name or None,
         business_category = business_category or None,
         location          = location or None,
-        preferred_lang    = getattr("preferred_lang", "sw"),
-        status            = UserStatus.active,
+        preferred_lang    = preferred_lang,  # ✅ Pass the variable directly!
+        status            = UserStatus.active if hasattr(UserStatus, 'active') else "active",
     )
     db.add(user)
-    db.commit()
-    db.refresh(user)
-    logger.info("Registered new user: id=%d phone=%s", user.id, phone_number)
+    await db.commit()  # 💡 Ensure you await this since your session is async
+    await db.refresh(user)
+    
+    logger.info("Registered new user: id=%s phone=%s", str(user.id), phone_number)
     return user
 
 
