@@ -274,27 +274,22 @@ export default function DaftariYangu() {
     }
     setSaving(true);
     try {
+      // Tengeneza sentensi ya kawaida itakayochakatwa na NLP ya Backend
+      const muamalaText = `${form.type === "mapato" ? "Nimepokea" : "Nimetumia"} kiasi cha ${amount} kwa ajili ya ${form.category}. ${form.description || ""}`;
+
+      // Tuma payload safi inayokubalika na backend model
       const result = await createTransaction({
-        user_id:          USER_ID,
-        type:             form.type,
-        category:         form.category,
-        amount,
-        description:      form.description || null,
-        transaction_date: form.transaction_date,
-        source:           transcript ? "voice" : "manual",
-        raw_transcript:   transcript  || null,
-        nlp_confidence:   nlpData?.confidence || null,
-        product_name:     form.product_name   || null,
-        quantity:         form.quantity ? parseFloat(form.quantity) : null,
-        nlp_entities:     nlpData || null,
+        user_id: USER_ID,
+        text:    muamalaText.trim(),
       });
+
       if (result.offline) {
         showToast("📴 Imehifadhiwa nje ya mtandao. Itasawazishwa baadaye.", "warning");
       } else {
         showToast("✅ Muamala umehifadhiwa!", "success");
       }
       setTranscript(""); setNlp(null); setAllTxs([]); setForm(EMPTY_FORM); recorder.reset();
-      setAL(false); setTab("daftari"); reload();
+      setAnalyticsLoading(false); setTab("daftari"); reload();
     } catch (err) {
       showToast("❌ " + (err.message || "Hitilafu ya kuhifadhi"), "error");
     } finally { setSaving(false); }
@@ -307,19 +302,12 @@ export default function DaftariYangu() {
     let saved = 0; let failed = 0;
     for (const tx of allTransactions) {
       try {
+        // Tengeneza maelezo ya kila muamala kuwa maandishi ya kawaida (text)
+        const muamalaText = `${tx.transaction_type === "mapato" ? "Mapato ya" : "Gharama ya"} ${tx.amount} kwenye kundi la ${tx.category}. ${tx.description || ""}`;
+
         await createTransaction({
-          user_id:          USER_ID,
-          type:             tx.transaction_type,
-          category:         tx.category,
-          amount:           parseFloat(tx.amount),
-          description:      tx.description || transcript || "",
-          transaction_date: tx.transaction_date ? tx.transaction_date.slice(0,10) : new Date().toISOString().slice(0,10),
-          source:           "voice",
-          raw_transcript:   transcript || null,
-          nlp_confidence:   tx.confidence || nlpData?.confidence || null,
-          product_name:     tx.product_name || null,
-          quantity:         tx.quantity ? parseFloat(tx.quantity) : null,
-          nlp_entities:     tx || null,
+          user_id: USER_ID,
+          text:    muamalaText.trim(),
         });
         saved++;
       } catch (err) { console.error("[saveAll]", err); failed++; }
@@ -328,7 +316,7 @@ export default function DaftariYangu() {
     if (failed === 0) showToast(`✅ Miamala ${saved} imehifadhiwa!`, "success");
     else showToast(`⚠️ ${saved} imehifadhiwa, ${failed} imeshindwa`, "warning");
     setTranscript(""); setNlp(null); setAllTxs([]); setForm(EMPTY_FORM); recorder.reset();
-    setAL(false); setTab("daftari"); reload();
+    setAnalyticsLoading(false); setTab("daftari"); reload();
   }
 
   async function handleDelete(id) {
