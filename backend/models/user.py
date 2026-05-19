@@ -22,6 +22,8 @@ class User(Base):
     location = Column(String(200), nullable=True)
     whatsapp_opt_in = Column(Boolean, default=False)
     created_at = Column(DateTime(timezone=True), default=func.now())
+    phone_verified = Column(Boolean, default=False, nullable=False)
+    status = Column(SAEnum(UserStatus), default=UserStatus.pending, nullable=False)
     
     # Commented out items remain safely ignored...
     # phone_verified = Column(Boolean, default=False, nullable=False)
@@ -41,7 +43,6 @@ class User(Base):
     sync_queue = relationship("SyncQueue", back_populates="user", lazy="dynamic")
 
     def to_dict(self) -> dict:
-        # 💡 Fixed to safely reflect your active schema definitions
         return {
             "id": self.id,
             "phone_number": self.phone_number,
@@ -50,9 +51,10 @@ class User(Base):
             "business_type": self.business_type, 
             "location": self.location,
             "whatsapp_opt_in": self.whatsapp_opt_in,
+            "phone_verified": self.phone_verified,          # 💡 Added back safely
+            "status": self.status.value if hasattr(self.status, 'value') else self.status, # 💡 Added back safely
             "created_at": self.created_at.isoformat() if self.created_at else None,
         }
-
 
 class OTPDeliveryMethod(str, enum.Enum):
     sms = "sms"
