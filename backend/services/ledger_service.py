@@ -47,18 +47,12 @@ async def create_transaction(
     nlp_entities: Optional[dict] = None,
     local_id: Optional[str] = None,
 ) -> Transaction:
-    """
-    RULE01: Profit = Revenue − Cost
-    MAPATO  → revenue=amount, cost=0
-    GHARAMA → revenue=0,      cost=amount
-    """
     if tx_type == TransactionType.MAPATO:
         revenue, cost = amount, 0.0
     else:
         revenue, cost = 0.0, amount
     profit = revenue - cost
 
-    # Map source string to enum
     src_map = {"voice": TransactionSource.VOICE, "whatsapp": TransactionSource.WHATSAPP}
     src = src_map.get(source, TransactionSource.MANUAL)
 
@@ -73,7 +67,8 @@ async def create_transaction(
         profit=profit,
         source=src,
         description=description,
-        timestamp=transaction_date or datetime.utcnow(),
+        # ✅ Changed from timestamp to transaction_date
+        transaction_date=transaction_date or datetime.utcnow(),
         raw_transcript=raw_transcript,
         nlp_confidence=nlp_confidence,
         product_name=product_name,
@@ -97,7 +92,8 @@ async def get_transactions(
     stmt = (
         select(Transaction)
         .where(Transaction.user_id == user_id)
-        .order_by(Transaction.timestamp.desc())
+        # ✅ Changed from timestamp to transaction_date
+        .order_by(Transaction.transaction_date.desc())
         .limit(limit).offset(offset)
     )
     if tx_type:
@@ -105,9 +101,11 @@ async def get_transactions(
     if category:
         stmt = stmt.where(Transaction.category == category)
     if date_from:
-        stmt = stmt.where(Transaction.timestamp >= date_from)
+        # ✅ Changed from timestamp to transaction_date
+        stmt = stmt.where(Transaction.transaction_date >= date_from)
     if date_to:
-        stmt = stmt.where(Transaction.timestamp <= date_to)
+        # ✅ Changed from timestamp to transaction_date
+        stmt = stmt.where(Transaction.transaction_date <= date_to)
     return list((await db.execute(stmt)).scalars().all())
 
 
@@ -136,7 +134,8 @@ async def get_summary(db, user_id, days=30):
         func.count(Transaction.id).label("transactions_count"),
     ).where(and_(
         Transaction.user_id == user_id,
-        Transaction.timestamp >= since,
+        # ✅ Changed from timestamp to transaction_date
+        Transaction.transaction_date >= since,
     ))
     row = (await db.execute(stmt)).one()
     revenue = float(row.total_revenue)
@@ -160,7 +159,8 @@ async def get_top_products(db, user_id, days=30, limit=5):
         .where(and_(
             Transaction.user_id == user_id,
             Transaction.type == TransactionType.MAPATO,
-            Transaction.timestamp >= since,
+            # ✅ Changed from timestamp to transaction_date
+            Transaction.transaction_date >= since,
         ))
         .group_by(func.coalesce(Transaction.product_name, "Nyingine"))
         .order_by(func.sum(Transaction.amount).desc())
@@ -180,7 +180,8 @@ async def get_spending_by_category(db, user_id, days=30):
         .where(and_(
             Transaction.user_id == user_id,
             Transaction.type == TransactionType.GHARAMA,
-            Transaction.timestamp >= since,
+            # ✅ Changed from timestamp to transaction_date
+            Transaction.transaction_date >= since,
         ))
         .group_by(Transaction.category)
         .order_by(func.sum(Transaction.amount).desc())
