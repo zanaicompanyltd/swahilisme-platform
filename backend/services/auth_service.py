@@ -11,6 +11,7 @@ from typing import Optional
 from jose import JWTError, jwt
 from passlib.context import CryptContext
 from sqlalchemy.orm import Session
+from sqlalchemy.future import select
 
 from models.user import User, UserStatus, OTPCode
 
@@ -102,12 +103,15 @@ def register_user(
 
 # ── Login ─────────────────────────────────────────────────────────────────
 
-def login_user(phone_number: str, db: Session) -> dict:
+async def login_user(phone_number: str, db: AsyncSession):
     """
     Called after OTP is verified. Returns JWT tokens.
     If user doesn't exist yet, returns needs_registration=True.
     """
-    user = db.query(User).filter(User.phone_number == phone_number).first()
+    #  NEW ASYNC COMPATIBLE SYNTAX:
+    stmt = select(User).where(User.phone_number == phone_number)
+    result = await db.execute(stmt)
+    user = result.scalars().first()
 
     if not user:
         return {"needs_registration": True, "phone": phone_number}
