@@ -1037,5 +1037,3 @@ const CSS = `
   button:active { transform: scale(0.97); }
   ::-webkit-scrollbar { width: 4px; } ::-webkit-scrollbar-thumb { background: #d1d5db; border-radius: 4px; }
 `;
-
-export default DaftariYangu;
