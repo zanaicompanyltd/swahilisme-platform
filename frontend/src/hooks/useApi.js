@@ -130,26 +130,30 @@ export async function transcribeAudio(audioBlob, userId) {
   return data;
 }
 
-export async function createTransaction(payload) {
+export async function createTransaction(payload, userId) {
+  // 1. Unganisha userId ndani ya payload ili ikidhi vigezo vya TextTransactionRequest ya backend
+  const completePayload = { ...payload, user_id: userId };
+
   if (!navigator.onLine) {
-    enqueueOffline(payload);
+    enqueueOffline(completePayload);
     return {
       success: true,
       offline: true,
       message: "Rekodi imehifadhiwa nje ya mtandao.",
-      transaction: { ...payload, id: `offline_${Date.now()}` },
+      transaction: { ...completePayload, id: `offline_${Date.now()}` },
     };
   }
   try {
-    return await apiFetch("/daftari/text", { method: "POST", body: JSON.stringify(payload) });
+    // 2. Tuma completePayload yenye 'user_id' na 'text' kwenda kwenye backend kama safi kabisa ya JSON
+    return await apiFetch("/daftari/text", { method: "POST", body: JSON.stringify(completePayload) });
   } catch (err) {
     if (err.message.includes("Failed to fetch") || err.message.includes("NetworkError")) {
-      enqueueOffline(payload);
+      enqueueOffline(completePayload);
       return {
         success: true,
         offline: true,
         message: "Rekodi imehifadhiwa nje ya mtandao.",
-        transaction: { ...payload, id: `offline_${Date.now()}` },
+        transaction: { ...completePayload, id: `offline_${Date.now()}` },
       };
     }
     throw err;
