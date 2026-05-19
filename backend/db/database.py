@@ -16,7 +16,7 @@ POSTGRES_URL = os.getenv("DATABASE_URL", "")
 # ── ONE Base shared by ALL models — defined BEFORE any model imports ──────────
 Base = declarative_base()
 
-# ── Engine ────────────────────────────────────────────────────────────────────
+# ── Engine Builder ────────────────────────────────────────────────────────────
 def _build_engine():
     if DB_MODE == "postgres" and POSTGRES_URL:
         print("[DB] Connecting to Supabase PostgreSQL")
@@ -25,9 +25,10 @@ def _build_engine():
             echo=False,
             poolclass=NullPool,
             connect_args={
-                "statement_cache_size": 0  #  Fixed typo here
+                "statement_cache_size": 0  # ✅ Fixed typo (removed "prepared_")
             },
         )
+    
     print(f"[DB] Using SQLite: {SQLITE_URL}")
     return create_async_engine(
         SQLITE_URL,
@@ -35,6 +36,18 @@ def _build_engine():
         connect_args={"check_same_thread": False},
         poolclass=StaticPool,
     )
+
+# ── Global Engine Assignment ──────────────────────────────────────────────────
+# This MUST exist at the module level so init_db() can see it!
+engine = _build_engine()
+
+AsyncSessionLocal = async_sessionmaker(
+    bind=engine,
+    class_=AsyncSession,
+    expire_on_commit=False,
+    autoflush=False,
+    autocommit=False,
+)
 
 # ── Dependencies ──────────────────────────────────────────────────────────────
 async def get_db():
