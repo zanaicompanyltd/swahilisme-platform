@@ -27,14 +27,8 @@ class User(Base):
     email = Column(String(255), nullable=True)
     email_verified = Column(Boolean, default=False, nullable=False)
     business_category = Column(String(100), nullable=True)
-    
-    # Commented out items remain safely ignored...
-    # phone_verified = Column(Boolean, default=False, nullable=False)
-    # email = Column(String(255), unique=True, nullable=True, index=True)
-    # email_verified = Column(Boolean, default=False, nullable=False)
-    # preferred_lang = Column(String(5), default="sw", nullable=False) 
-    # status = Column(SAEnum(UserStatus), default=UserStatus.pending, nullable=False)  
-    # updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    preferred_lang = Column(String(10), server_default="sw", default="sw", nullable=True)
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=True)
 
     # Relationships
     transactions = relationship("Transaction", back_populates="user", lazy="dynamic")
@@ -51,15 +45,17 @@ class User(Base):
             "phone_number": self.phone_number,
             "name": self.name,
             "business_name": self.business_name,
-            "business_type": self.business_type, 
-            "business_category": self.business_category, # 💡 Safely visible
+            "business_type": self.business_type,
             "location": self.location,
             "whatsapp_opt_in": self.whatsapp_opt_in,
-            "phone_verified": self.phone_verified,          
-            "email": self.email,                          # 💡 Safely visible
-            "email_verified": self.email_verified,        # 💡 Safely visible
-            "status": self.status.value if hasattr(self.status, 'value') else self.status, 
+            "phone_verified": self.phone_verified,
+            "email": self.email,
+            "email_verified": self.email_verified,
+            "business_category": self.business_category,
+            "preferred_lang": self.preferred_lang,
+            "status": self.status,
             "created_at": self.created_at.isoformat() if self.created_at else None,
+            "updated_at": self.updated_at.isoformat() if self.updated_at else None,
         }
 
 class OTPDeliveryMethod(str, enum.Enum):
