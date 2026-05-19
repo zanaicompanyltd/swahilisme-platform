@@ -12,6 +12,7 @@ from jose import JWTError, jwt
 from passlib.context import CryptContext
 from sqlalchemy.orm import Session
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import select
 from sqlalchemy.future import select
 
 from models.user import User, UserStatus, OTPCode
@@ -60,7 +61,7 @@ def decode_token(token: str) -> Optional[dict]:
 
 # ── Registration ──────────────────────────────────────────────────────────
 
-def register_user(
+async def register_user(
     phone_number: str,
     full_name: str,
     db: Session,
@@ -75,7 +76,8 @@ def register_user(
     Raises ValueError for duplicate phone/email.
     """
     # Duplicate check
-    existing = db.query(User).filter(User.phone_number == phone_number).first()
+    result = await db.execute(select(User).where(User.phone_number == phone_number))
+    existing = result.scalars().first()
     if existing:
         raise ValueError("phone_already_registered")
 
