@@ -24,6 +24,9 @@ class User(Base):
     created_at = Column(DateTime(timezone=True), default=func.now())
     phone_verified = Column(Boolean, default=False, nullable=False)
     status = Column(SAEnum(UserStatus), default=UserStatus.pending, nullable=False)
+    email = Column(String(255), nullable=True)
+    email_verified = Column(Boolean, default=False, nullable=False)
+    business_category = Column(String(100), nullable=True)
     
     # Commented out items remain safely ignored...
     # phone_verified = Column(Boolean, default=False, nullable=False)
@@ -49,10 +52,13 @@ class User(Base):
             "name": self.name,
             "business_name": self.business_name,
             "business_type": self.business_type, 
+            "business_category": self.business_category, # 💡 Safely visible
             "location": self.location,
             "whatsapp_opt_in": self.whatsapp_opt_in,
-            "phone_verified": self.phone_verified,          # 💡 Added back safely
-            "status": self.status.value if hasattr(self.status, 'value') else self.status, # 💡 Added back safely
+            "phone_verified": self.phone_verified,          
+            "email": self.email,                          # 💡 Safely visible
+            "email_verified": self.email_verified,        # 💡 Safely visible
+            "status": self.status.value if hasattr(self.status, 'value') else self.status, 
             "created_at": self.created_at.isoformat() if self.created_at else None,
         }
 
