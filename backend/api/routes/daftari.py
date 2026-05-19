@@ -25,7 +25,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirna
 
 import io
 from datetime import datetime
-from typing import Optional
+from typing import Literal, Optional
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile
 from fastapi.responses import Response, StreamingResponse
@@ -58,8 +58,10 @@ class TranscribeResponse(BaseModel):
 
 class CreateTransactionRequest(BaseModel):
     user_id: str
-    type: TransactionType
-    category: TransactionCategory
+    # ✅ Match your SQL CHECK: 'mapato','gharama','income','expense'
+    type: Literal["mapato", "gharama", "income", "expense"]
+    # ✅ Plain string — your DB stores varchar, not an enum type
+    category: str
     amount: float = Field(gt=0)
     description: str = ""
     transaction_date: Optional[datetime] = None
@@ -133,34 +135,74 @@ async def create_transaction(
     db: AsyncSession = Depends(get_db),
 ):
     await ledger_service.get_or_create_user(db, req.user_id)
-    tx = await ledger_service.create_transaction(
-        db=db,
-        user_id=req.user_id,
-        tx_type=req.type,
-        category=req.category,
-        amount=req.amount,
-        description=req.description,
-        transaction_date=req.transaction_date,
-        source=req.source,
-        raw_transcript=req.raw_transcript,
-        nlp_confidence=req.nlp_confidence,
-        product_name=req.product_name,
-        quantity=req.quantity,
-        unit_price=req.unit_price,
-        nlp_entities=req.nlp_entities,
-        local_id=req.local_id,
-    )
+
+    # ✅ Normalize: treat 'income'→'mapato', 'expense'→'gharama' for consistency
+    tx_type_str = req.type
+    if tx_type_str == "income":
+        tx_type_str = "mapato"
+    elif tx_type_str == "expense":
+        tx_type_str = "gharama"
+
+    # ✅ Compute revenue/cost/profit based on type string directly
+    amount = float(req.amount)
+    if tx_type_str == "mapato":
+        revenue, cost = amount, 0.0
+    else:
+        revenue, cost = 0.0, amount
+    profit = revenue - cost
+
+    # ✅ Use raw SQL insert to bypass SQLAlchemy enum mismatch entirely
+    from sqlalchemy import text as sql_text
+    import uuid as uuid_lib
+
+    tx_id = str(uuid_lib.uuid4())
+    tx_date = req.transaction_date.date() if req.transaction_date else None
+
+    await db.execute(sql_text("""
+        INSERT INTO transactions (
+            id, user_id, type, category, amount, revenue, cost, profit,
+            description, product_name, quantity, unit_price,
+            source, raw_transcript, nlp_confidence, nlp_entities,
+            local_id, is_synced, transaction_date, currency
+        ) VALUES (
+            :id, :user_id, :type, :category, :amount, :revenue, :cost, :profit,
+            :description, :product_name, :quantity, :unit_price,
+            :source, :raw_transcript, :nlp_confidence, :nlp_entities::jsonb,
+            :local_id, true, COALESCE(:transaction_date, CURRENT_DATE), 'TZS'
+        )
+    """), {
+        "id":               tx_id,
+        "user_id":          req.user_id,
+        "type":             tx_type_str,
+        "category":         req.category or "nyingine_gharama",
+        "amount":           amount,
+        "revenue":          revenue,
+        "cost":             cost,
+        "profit":           profit,
+        "description":      req.description or "",
+        "product_name":     req.product_name,
+        "quantity":         req.quantity,
+        "unit_price":       req.unit_price,
+        "source":           req.source or "manual",
+        "raw_transcript":   req.raw_transcript,
+        "nlp_confidence":   req.nlp_confidence,
+        "nlp_entities":     json.dumps(req.nlp_entities) if req.nlp_entities else None,
+        "local_id":         req.local_id,
+        "transaction_date": tx_date,
+    })
+    await db.commit()
+
     return {
-        "id":        tx.id,
+        "id":        tx_id,
         "status":    "created",
-        "amount":    tx.amount,
-        "revenue":   tx.revenue,
-        "cost":      tx.cost,
-        "profit":    tx.profit,
-        "type":      tx.type.value,
-        "category":  tx.category.value,
-        "timestamp": tx.timestamp.isoformat(),
-        "is_synced": tx.is_synced,
+        "amount":    amount,
+        "revenue":   revenue,
+        "cost":      cost,
+        "profit":    profit,
+        "type":      tx_type_str,
+        "category":  req.category,
+        "timestamp": datetime.utcnow().isoformat(),
+        "is_synced": True,
     }
 
 
@@ -422,23 +464,86 @@ class TextTransactionRequest(BaseModel):
     text: str
 
 @router.post("/text", summary="Ingiza muamala kwa maandishi ya kawaida (Text NLP)")
-async def transcribe_text_input(body: TextTransactionRequest):
+async def create_transaction_from_text(
+    body: TextTransactionRequest,
+    db: AsyncSession = Depends(get_db),
+):
     try:
         nlp = get_nlp_service()
         nlp_result = nlp.extract(body.text)
-        
+
+        # ✅ Determine type string
+        tx_type_str = "mapato"
+        if nlp_result.transaction_type:
+            val = nlp_result.transaction_type.value if hasattr(nlp_result.transaction_type, 'value') else str(nlp_result.transaction_type)
+            if val in ("gharama", "expense"):
+                tx_type_str = "gharama"
+
+        amount = float(nlp_result.amount or 0)
+        if amount <= 0:
+            # Try to parse amount from text directly as fallback
+            import re
+            m = re.search(r'(\d[\d,]*)', body.text)
+            if m:
+                amount = float(m.group(1).replace(",", ""))
+
+        category = "nyingine_mapato" if tx_type_str == "mapato" else "nyingine_gharama"
+        if nlp_result.category:
+            category = nlp_result.category.value if hasattr(nlp_result.category, 'value') else str(nlp_result.category)
+
+        revenue = amount if tx_type_str == "mapato" else 0.0
+        cost    = amount if tx_type_str == "gharama" else 0.0
+        profit  = revenue - cost
+
+        await ledger_service.get_or_create_user(db, body.user_id)
+
+        import uuid as uuid_lib
+        from sqlalchemy import text as sql_text
+
+        tx_id   = str(uuid_lib.uuid4())
+        tx_date = nlp_result.transaction_date.date() if nlp_result.transaction_date else None
+
+        await db.execute(sql_text("""
+            INSERT INTO transactions (
+                id, user_id, type, category, amount, revenue, cost, profit,
+                description, product_name, quantity,
+                source, raw_transcript, nlp_confidence,
+                is_synced, transaction_date, currency
+            ) VALUES (
+                :id, :user_id, :type, :category, :amount, :revenue, :cost, :profit,
+                :description, :product_name, :quantity,
+                'manual', :raw_transcript, :nlp_confidence,
+                true, COALESCE(:transaction_date, CURRENT_DATE), 'TZS'
+            )
+        """), {
+            "id":             tx_id,
+            "user_id":        body.user_id,
+            "type":           tx_type_str,
+            "category":       category,
+            "amount":         amount,
+            "revenue":        revenue,
+            "cost":           cost,
+            "profit":         profit,
+            "description":    body.text[:500],
+            "product_name":   nlp_result.product_name,
+            "quantity":       nlp_result.quantity,
+            "raw_transcript": body.text,
+            "nlp_confidence": nlp_result.confidence,
+            "transaction_date": tx_date,
+        })
+        await db.commit()
+
         return {
-            "success": True,
-            "raw_text": body.text,
-            "nlp": {
-                "transaction_type": nlp_result.transaction_type.value if nlp_result.transaction_type else None,
-                "category":         nlp_result.category.value if nlp_result.category else None,
-                "amount":           nlp_result.amount,
-                "transaction_date": nlp_result.transaction_date.isoformat() if nlp_result.transaction_date else None,
-                "product_name":     nlp_result.product_name,
-                "quantity":         nlp_result.quantity,
-                "confidence":       nlp_result.confidence
-            }
+            "success":  True,
+            "id":       tx_id,
+            "type":     tx_type_str,
+            "category": category,
+            "amount":   amount,
+            "revenue":  revenue,
+            "cost":     cost,
+            "profit":   profit,
         }
+
     except Exception as e:
+        await db.rollback()
         raise HTTPException(status_code=500, detail=str(e))
