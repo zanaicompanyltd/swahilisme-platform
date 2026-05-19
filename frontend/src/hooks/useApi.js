@@ -414,15 +414,34 @@ export async function syncOfflineQueue(userId) {
 
   const results = await Promise.allSettled(
     queue.map((item) => {
-      // Build text from queued item for /daftari/text endpoint
-      const amount   = parseFloat(item.amount) || 0;
-      const typeWord = item.type === "mapato" ? "Nimepata" : "Nimetumia";
-      const text     = item.text
-        || `${typeWord} shilingi ${amount} kwa ajili ya ${item.category || "biashara"}`;
+      // Build text from whatever fields were saved offline
+      const amount   = parseFloat(item.amount || item._amount) || 0;
+      const type     = item.type || item._type || "mapato";
+      const category = item.category || item._category || "nyingine_mapato";
+      const typeWord = type === "mapato" ? "Nimepata" : "Nimetumia";
+
+      // Use existing text if available, otherwise build from fields
+      const text = item.text || [
+        typeWord,
+        `shilingi ${amount}`,
+        `kwa ajili ya ${category}`,
+        item.product_name || item._product_name ? `- ${item.product_name || item._product_name}` : "",
+        item.description  || item._description  ? `- ${item.description  || item._description}`  : "",
+      ].filter(Boolean).join(" ");
 
       return apiFetch("/daftari/text", {
         method: "POST",
-        body:   JSON.stringify({ user_id: userId, text, ...item }),
+        body: JSON.stringify({
+          user_id:           userId,
+          text,
+          _type:             type,
+          _category:         category,
+          _amount:           amount,
+          _product_name:     item.product_name  || item._product_name  || null,
+          _description:      item.description   || item._description   || null,
+          _transaction_date: item.transaction_date || item._transaction_date || null,
+          _quantity:         item.quantity       || item._quantity       || null,
+        }),
       });
     })
   );
