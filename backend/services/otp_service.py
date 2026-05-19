@@ -30,7 +30,7 @@ AT_API_KEY       = os.getenv("AFRICASTALKING_API_KEY", "atsk_d5819c457354e4780d7
 AT_USERNAME      = os.getenv("AFRICASTALKING_USERNAME", "sandbox")
 
 # 💡 CHANGED: Sandbox requires 'sandbox' as the sender ID instead of 'SWAHILISME'
-AT_SENDER_ID     = os.getenv("AFRICASTALKING_SENDER_ID", "sandbox")
+AT_SENDER_ID     = "sandbox"
 
 # 💡 CHANGED: Swapped production URL to the dedicated sandbox API endpoint
 AT_SMS_URL       = "https://api.sandbox.africastalking.com/version1/messaging"
