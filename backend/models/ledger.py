@@ -33,10 +33,8 @@ class TransactionCategory(str, PyEnum):
     NYINGINE_GHARAMA   = "nyingine_gharama"
 
 class TransactionType(str, enum.Enum):
-    revenue  = "revenue"
-    expense  = "expense"
-    purchase = "purchase"
-
+    MAPATO  = "mapato"
+    GHARAMA = "gharama"
 class TransactionSource(str, PyEnum):
     VOICE    = "voice"
     MANUAL   = "manual"
