@@ -1,7 +1,6 @@
 # backend/models/user.py
 import enum
 from datetime import datetime
-# 💡 Added ForeignKey to the import list below
 from sqlalchemy import Column, Integer, String, func, Boolean, DateTime, Enum as SAEnum, Text, ForeignKey
 from sqlalchemy.orm import relationship
 from db.database import Base  
@@ -15,13 +14,16 @@ class User(Base):
     __tablename__ = "users"
 
     id = Column(String(50), primary_key=True)
-    phone = Column(String(20), unique=True, nullable=True)
+    # 💡 Renamed to match what your auth_service expects (User.phone_number)
+    phone_number = Column(String(20), unique=True, nullable=True)
     name = Column(String(100), nullable=True)
     business_name = Column(String(200), nullable=True)
-    business_type = Column(String(100), nullable=True) # Changed from business_category
+    business_type = Column(String(100), nullable=True) 
     location = Column(String(200), nullable=True)
     whatsapp_opt_in = Column(Boolean, default=False)
     created_at = Column(DateTime(timezone=True), default=func.now())
+    
+    # Commented out items remain safely ignored...
     # phone_verified = Column(Boolean, default=False, nullable=False)
     # email = Column(String(255), unique=True, nullable=True, index=True)
     # email_verified = Column(Boolean, default=False, nullable=False)
@@ -39,16 +41,16 @@ class User(Base):
     sync_queue = relationship("SyncQueue", back_populates="user", lazy="dynamic")
 
     def to_dict(self) -> dict:
+        # 💡 Fixed to safely reflect your active schema definitions
         return {
             "id": self.id,
-            "phone": self.phone,
+            "phone_number": self.phone_number,
             "name": self.name,
             "business_name": self.business_name,
-            "business_category": self.business_category,
+            "business_type": self.business_type, 
             "location": self.location,
-            "preferred_lang": self.preferred_lang,
-            "status": self.status.value,
-            "created_at": self.created_at.isoformat(),
+            "whatsapp_opt_in": self.whatsapp_opt_in,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
         }
 
 
@@ -61,8 +63,6 @@ class OTPCode(Base):
     __tablename__ = "otp_codes"
 
     id = Column(Integer, primary_key=True, index=True)
-    
-    # 💡 Added explicit ForeignKey mapping here linking back to users.id table
     user_id = Column(String(50), ForeignKey("users.id", ondelete="CASCADE"), nullable=True)  
     
     phone_number = Column(String(20), nullable=False, index=True)
@@ -74,5 +74,4 @@ class OTPCode(Base):
     expires_at = Column(DateTime, nullable=False)
     created_at = Column(DateTime, default=datetime.utcnow)
 
-    # Cleaned up redundant explicit primaryjoin parameters since ForeignKey configuration handles it cleanly
     user = relationship("User", back_populates="otp_codes")
