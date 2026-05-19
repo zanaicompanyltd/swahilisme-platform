@@ -110,7 +110,7 @@ async def login_user(phone_number: str, db: AsyncSession):
     If user doesn't exist yet, returns needs_registration=True.
     """
     #  NEW ASYNC COMPATIBLE SYNTAX:
-    stmt = select(User).where(User.phone_number == phone_number)
+    stmt = select(User).where(User.phone == phone_number) 
     result = await db.execute(stmt)
     user = result.scalars().first()
 
