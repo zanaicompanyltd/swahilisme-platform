@@ -94,7 +94,7 @@ async def register_user(
         business_name     = business_name or None,
         business_category = business_category or None,
         location          = location or None,
-        preferred_lang    = preferred_lang,
+        preferred_lang    =getattr(registration_data, "preferred_lang", "sw"),
         status            = UserStatus.active,
     )
     db.add(user)
