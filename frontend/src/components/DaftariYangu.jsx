@@ -399,7 +399,7 @@ export default function DaftariYangu() {
                 {" · "}{USER_ID}
               </div>
             </div>
-          </div>
+          </div>  {/* ← this </div> was missing */}
           <div style={{ display:"flex", gap:6, alignItems:"center" }}>
             {offlineCount > 0 && (
               <button
@@ -436,6 +436,7 @@ export default function DaftariYangu() {
               </button>
             )}
           </div>
+        </div>  {/* ← closes hInner */}
       </header>
 
       {/* ── Toast ──────────────────────────────────────────────────────────── */}
