@@ -82,8 +82,29 @@ async def get_transactions(
         .order_by(Transaction.transaction_date.desc())
         .limit(limit).offset(offset)
     )
+    # In get_transactions — change type filter:
     if tx_type:
-        stmt = stmt.where(Transaction.type == tx_type)
+        type_str = tx_type.value if hasattr(tx_type, "value") else str(tx_type)
+        stmt = stmt.where(Transaction.type == type_str)  # ✅ string comparison
+    
+    # In get_summary — change the where clause:
+    stmt = select(...).where(and_(
+        Transaction.user_id == user_id,
+        Transaction.transaction_date >= since,
+    ))
+    # In get_top_products — change the type filter:
+    .where(and_(
+        Transaction.user_id == user_id,
+        Transaction.type == "mapato",   # ✅ plain string
+        Transaction.transaction_date >= since,
+    ))
+    
+    # In get_spending_by_category:
+    .where(and_(
+        Transaction.user_id == user_id,
+        Transaction.type == "gharama",  # ✅ plain string
+        Transaction.transaction_date >= since,
+    ))
     if category:
         stmt = stmt.where(Transaction.category == category)
     if date_from:
