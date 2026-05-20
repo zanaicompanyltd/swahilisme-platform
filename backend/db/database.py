@@ -2,33 +2,40 @@
 backend/db/database.py — Single source of truth for SQLAlchemy Base and engine.
 All models must import Base from here. Never create their own Base.
 """
-
 import os
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine, async_sessionmaker
 from sqlalchemy.orm import declarative_base
 from sqlalchemy.pool import StaticPool, NullPool
 
 # ── Environment ───────────────────────────────────────────────────────────────
-DB_MODE      = os.getenv("DB_MODE", "sqlite")
+DB_MODE      = os.getenv("DB_MODE", "postgresql")
 SQLITE_URL   = os.getenv("SQLITE_URL", "sqlite+aiosqlite:///./daftari.db")
 POSTGRES_URL = os.getenv("DATABASE_URL", "")
 
-# ── ONE Base shared by ALL models — defined BEFORE any model imports ──────────
+# ── ONE Base shared by ALL models ─────────────────────────────────────────────
 Base = declarative_base()
+
 
 # ── Engine Builder ────────────────────────────────────────────────────────────
 def _build_engine():
-    if DB_MODE == "postgres" and POSTGRES_URL:
-        print("[DB] Connecting to Supabase PostgreSQL")
+    # ✅ Check for both "postgresql" and "postgres" to be safe
+    if POSTGRES_URL and DB_MODE in ("postgresql", "postgres"):
+
+        # ✅ Fix URL scheme: Supabase gives postgresql:// but asyncpg needs postgresql+asyncpg://
+        url = POSTGRES_URL
+        if url.startswith("postgres://"):
+            url = url.replace("postgres://", "postgresql+asyncpg://", 1)
+        elif url.startswith("postgresql://") and "+asyncpg" not in url:
+            url = url.replace("postgresql://", "postgresql+asyncpg://", 1)
+
+        print(f"[DB] Connecting to Supabase PostgreSQL")
         return create_async_engine(
-            POSTGRES_URL,
+            url,
             echo=False,
-            poolclass=NullPool,
-            connect_args={
-                "statement_cache_size": 0  # ✅ Fixed typo (removed "prepared_")
-            },
+            poolclass=NullPool,   # NullPool is best for serverless/Railway
         )
-    
+
+    # ── SQLite fallback (local dev only) ──────────────────────────────────────
     print(f"[DB] Using SQLite: {SQLITE_URL}")
     return create_async_engine(
         SQLITE_URL,
@@ -37,8 +44,8 @@ def _build_engine():
         poolclass=StaticPool,
     )
 
-# ── Global Engine Assignment ──────────────────────────────────────────────────
-# This MUST exist at the module level so init_db() can see it!
+
+# ── Global engine ─────────────────────────────────────────────────────────────
 engine = _build_engine()
 
 AsyncSessionLocal = async_sessionmaker(
@@ -49,9 +56,9 @@ AsyncSessionLocal = async_sessionmaker(
     autocommit=False,
 )
 
-# ── Dependencies ──────────────────────────────────────────────────────────────
+
+# ── FastAPI dependency ────────────────────────────────────────────────────────
 async def get_db():
-    """FastAPI dependency — yields one async session per request."""
     async with AsyncSessionLocal() as session:
         try:
             yield session
@@ -62,18 +69,17 @@ async def get_db():
         finally:
             await session.close()
 
+
 # ── Table creation ────────────────────────────────────────────────────────────
 async def init_db():
-    """Create all tables on startup. Import models here to register them."""
-    # Import models HERE (inside the function) to avoid circular imports
-    import models.ledger  # noqa: F401
+    """Create all tables on startup."""
+    import models.ledger  # noqa — registers Transaction etc. on Base
+    import models.user    # noqa — registers User, OTPCode on Base
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
+    print("[DB] Tables ready")
+
 
 def create_all_tables():
-    """Sync version — only used if needed outside async context."""
-    import models.ledger  # noqa: F401
-    from sqlalchemy import create_engine as _sync_engine
-    sync_url = SQLITE_URL.replace("sqlite+aiosqlite", "sqlite") if "sqlite" in SQLITE_URL else POSTGRES_URL
-    _engine = _sync_engine(sync_url, connect_args={"check_same_thread": False} if "sqlite" in sync_url else {})
-    Base.metadata.create_all(bind=_engine)
+    """Sync fallback — not used in production."""
+    pass
