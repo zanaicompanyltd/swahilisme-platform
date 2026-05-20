@@ -30,44 +30,30 @@ async def get_or_create_user(db: AsyncSession, user_id: str) -> User:
 
 # ── Transaction CRUD ──────────────────────────────────────────────────────────
 
-async def create_transaction(
-    db: AsyncSession,
-    user_id: str,
-    tx_type: TransactionType,
-    category: TransactionCategory,
-    amount: float,
-    description: str = "",
-    transaction_date: Optional[datetime] = None,
-    source: str = "manual",
-    raw_transcript: Optional[str] = None,
-    nlp_confidence: Optional[float] = None,
-    product_name: Optional[str] = None,
-    quantity: Optional[float] = None,
-    unit_price: Optional[float] = None,
-    nlp_entities: Optional[dict] = None,
-    local_id: Optional[str] = None,
-) -> Transaction:
-    if tx_type == TransactionType.MAPATO:
+# ledger_service.py — fix create_transaction
+async def create_transaction(db, user_id, tx_type, category, amount, ...):
+    
+    # ✅ Convert enum to string if needed
+    type_str     = tx_type.value if hasattr(tx_type, "value") else str(tx_type)
+    category_str = category.value if hasattr(category, "value") else str(category)
+    
+    if type_str in ("mapato", "income"):
         revenue, cost = amount, 0.0
     else:
         revenue, cost = 0.0, amount
     profit = revenue - cost
 
-    src_map = {"voice": TransactionSource.VOICE, "whatsapp": TransactionSource.WHATSAPP}
-    src = src_map.get(source, TransactionSource.MANUAL)
-
     tx = Transaction(
         id=str(uuid.uuid4()),
         user_id=user_id,
-        type=tx_type,
-        category=category,
+        type=type_str,        # ✅ plain string
+        category=category_str, # ✅ plain string
         amount=amount,
         revenue=revenue,
         cost=cost,
         profit=profit,
-        source=src,
+        source="manual",
         description=description,
-        # ✅ Changed from timestamp to transaction_date
         transaction_date=transaction_date or datetime.utcnow(),
         raw_transcript=raw_transcript,
         nlp_confidence=nlp_confidence,
