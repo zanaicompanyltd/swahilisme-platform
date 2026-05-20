@@ -65,6 +65,8 @@ class TransactionSource(str, PyEnum):
 
 # ── transactions ──────────────────────────────────────────────────────────────
 
+# ── transactions ──────────────────────────────────────────────────────────────
+
 class Transaction(Base):
     __tablename__ = "transactions"
 
@@ -72,28 +74,25 @@ class Transaction(Base):
     user_id          = Column(String(50), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
     client_id        = Column(String(64), nullable=True, unique=True, index=True)
 
-    # Core Core fields (Synced to match request schema formats)
-    type             = Column(SAEnum(TransactionType), nullable=False)
-    category         = Column(SAEnum(TransactionCategory), nullable=False)
+    # ✅ Use String instead of SAEnum — matches your Supabase VARCHAR columns
+    type             = Column(String(20), nullable=False)
+    category         = Column(String(100), nullable=True)
     amount           = Column(Float, nullable=False)
     revenue          = Column(Float, default=0.0)
     cost             = Column(Float, default=0.0)
     profit           = Column(Float, default=0.0)
-    source           = Column(SAEnum(TransactionSource), default=TransactionSource.MANUAL)
+    source           = Column(String(20), default="manual")
     
-    # Text metadata fields
     description      = Column(Text, nullable=True)
     product_name     = Column(String(200), nullable=True)
     quantity         = Column(Float, nullable=True)
     unit_price       = Column(Float, nullable=True)
     currency         = Column(String(5), default="TZS")
     
-    # Audio & NLP logs
     raw_transcript   = Column(Text, nullable=True)
     nlp_confidence   = Column(Float, nullable=True)
     nlp_entities     = Column(JSON, nullable=True)
     
-    # Sync trail logic
     is_synced        = Column(Boolean, default=False)
     local_id         = Column(String(36), nullable=True)
     transaction_date = Column(Date, nullable=False, default=date.today)
@@ -108,11 +107,11 @@ class Transaction(Base):
             "id":               self.id,
             "user_id":          self.user_id,
             "client_id":        self.client_id,
-            "transaction_type": self.type.value if hasattr(self.type, 'value') else self.type,
+            "transaction_type": self.type,
             "amount":           self.amount,
             "cost":             self.cost,
             "profit":           self.profit,
-            "category":         self.category.value if hasattr(self.category, 'value') else self.category,
+            "category":         self.category,
             "product":          self.product_name,
             "transaction_date": self.transaction_date.isoformat() if self.transaction_date else None,
             "raw_text":         self.raw_transcript,
