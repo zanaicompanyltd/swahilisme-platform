@@ -17,7 +17,7 @@ import {
 } from "../hooks/useApi";
 
 import { useVoiceRecorder } from "../hooks/useVoiceRecorder";
-import sw from "../i18n/sw";
+// import sw from "../i18n/sw";
 
 // ── USER ID ───────────────────────────────────────────────────────────────────
 const USER_ID = (() => {
@@ -305,15 +305,22 @@ export default function DaftariYangu() {
     }
     setSaving(true);
     try {
-      // Tengeneza sentensi ya kawaida itakayochakatwa na NLP ya Backend
-      const muamalaText = `${form.type === "mapato" ? "Nimepokea" : "Nimetumia"} kiasi cha ${amount} kwa ajili ya ${form.category}. ${form.description || ""}`;
-
-      // Tuma payload safi inayokubalika na backend model
+      const muamalaText = `${form.type === "mapato" ? "Nimepata" : "Nimetumia"} shilingi ${amount} kwa ajili ya ${form.category}${form.description ? ". " + form.description : ""}`;
+  
+      // ✅ Pass structured fields so backend uses them directly
+      // instead of guessing from NLP
       const result = await createTransaction({
-        user_id: USER_ID,
-        text:    muamalaText.trim(),
+        user_id:          USER_ID,
+        text:             muamalaText.trim(),
+        _type:            form.type,
+        _category:        form.category,
+        _amount:          amount,
+        _product_name:    form.product_name  || null,
+        _description:     form.description   || null,
+        _transaction_date: form.transaction_date || null,
+        _quantity:        form.quantity ? parseFloat(form.quantity) : null,
       });
-
+  
       if (result.offline) {
         showToast("📴 Imehifadhiwa nje ya mtandao. Itasawazishwa baadaye.", "warning");
       } else {
