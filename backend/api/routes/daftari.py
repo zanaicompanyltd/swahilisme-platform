@@ -474,46 +474,60 @@ class TextTransactionRequest(BaseModel):
 
     model_config = {"populate_by_name": True}
 
-@router.post("/text")
+@router.post("/text", summary="Ingiza muamala kwa maandishi ya kawaida")
 async def create_transaction_from_text(
     body: TextTransactionRequest,
     db: AsyncSession = Depends(get_db),
 ):
     try:
-        # Use structured fields if provided (manual form), else run NLP
-        has_structured = body._amount and body._amount > 0
+        # ── Use structured fields if provided by frontend ──────────────
+        amount   = float(body._amount or 0)
+        has_structured = amount > 0 and body._type
 
         if has_structured:
-            tx_type_str = body._type or "mapato"
+            tx_type_str = body._type        # "mapato" or "gharama"
             category    = body._category or ("nyingine_mapato" if tx_type_str == "mapato" else "nyingine_gharama")
-            amount      = float(body._amount)
             product     = body._product_name
             description = body._description or body.text
             quantity    = body._quantity
             tx_date     = None
             if body._transaction_date:
                 try:
+                    from datetime import date as date_type
                     tx_date = datetime.strptime(body._transaction_date, "%Y-%m-%d").date()
                 except ValueError:
                     tx_date = None
         else:
-            nlp         = get_nlp_service()
-            nlp_result  = nlp.extract(body.text)
-            val         = nlp_result.transaction_type
-            tx_type_str = "gharama" if (val and ("gharama" in str(val).lower() or "expense" in str(val).lower())) else "mapato"
+            # ── Run NLP on the text ────────────────────────────────────
+            nlp        = get_nlp_service()
+            nlp_result = nlp.extract(body.text)
+
+            # ✅ Use string comparison — never reference TransactionType.MAPATO
+            raw_type    = ""
+            if nlp_result.transaction_type:
+                raw_type = str(nlp_result.transaction_type.value) if hasattr(nlp_result.transaction_type, "value") else str(nlp_result.transaction_type)
+
+            tx_type_str = "gharama" if "gharama" in raw_type.lower() or "expense" in raw_type.lower() else "mapato"
             amount      = float(nlp_result.amount or 0)
-            category    = (nlp_result.category.value if hasattr(nlp_result.category, "value") else str(nlp_result.category)) if nlp_result.category else ("nyingine_mapato" if tx_type_str == "mapato" else "nyingine_gharama")
+            category    = ""
+            if nlp_result.category:
+                category = nlp_result.category.value if hasattr(nlp_result.category, "value") else str(nlp_result.category)
+            if not category:
+                category = "nyingine_mapato" if tx_type_str == "mapato" else "nyingine_gharama"
             product     = nlp_result.product_name
             description = body.text
             quantity    = nlp_result.quantity
             tx_date     = nlp_result.transaction_date.date() if nlp_result.transaction_date else None
 
-        revenue = amount if tx_type_str == "mapato" else 0.0
+        # ── Compute financials ─────────────────────────────────────────
+        revenue = amount if tx_type_str == "mapato"  else 0.0
         cost    = amount if tx_type_str == "gharama" else 0.0
         profit  = revenue - cost
 
+        # ── Ensure user exists ─────────────────────────────────────────
         await ledger_service.get_or_create_user(db, body.user_id)
 
+        # ── Insert using raw SQL — avoids ALL enum issues ──────────────
         import uuid as uuid_lib
         from sqlalchemy import text as sql_text
 
@@ -521,13 +535,17 @@ async def create_transaction_from_text(
 
         await db.execute(sql_text("""
             INSERT INTO transactions (
-                id, user_id, type, category, amount, revenue, cost, profit,
-                description, product_name, quantity, source,
-                raw_transcript, is_synced, transaction_date, currency
+                id, user_id, type, category,
+                amount, revenue, cost, profit,
+                description, product_name, quantity,
+                source, raw_transcript, is_synced,
+                transaction_date, currency
             ) VALUES (
-                :id, :user_id, :type, :category, :amount, :revenue, :cost, :profit,
-                :description, :product_name, :quantity, 'manual',
-                :raw_transcript, true, COALESCE(:transaction_date, CURRENT_DATE), 'TZS'
+                :id, :user_id, :type, :category,
+                :amount, :revenue, :cost, :profit,
+                :description, :product_name, :quantity,
+                'manual', :raw_transcript, true,
+                COALESCE(:transaction_date, CURRENT_DATE), 'TZS'
             )
         """), {
             "id":               tx_id,
@@ -551,8 +569,13 @@ async def create_transaction_from_text(
             "id":      tx_id,
             "type":    tx_type_str,
             "amount":  amount,
+            "revenue": revenue,
+            "cost":    cost,
+            "profit":  profit,
         }
 
     except Exception as e:
         await db.rollback()
+        import traceback
+        traceback.print_exc()   # ← prints full error to Railway logs
         raise HTTPException(status_code=500, detail=str(e))
