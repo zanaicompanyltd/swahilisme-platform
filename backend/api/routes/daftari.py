@@ -462,15 +462,13 @@ def _generate_health_card_fallback(user, summary: dict, days: int) -> bytes:
 class TextTransactionRequest(BaseModel):
     user_id: str
     text: str
-    # ✅ Optional structured fields from manual form (prefixed with _)
-    # When present, use directly instead of relying on NLP
-    _type: Optional[str] = None
-    _category: Optional[str] = None
-    _amount: Optional[float] = None
-    _product_name: Optional[str] = None
-    _description: Optional[str] = None
-    _transaction_date: Optional[str] = None
-    _quantity: Optional[float] = None
+    _type:             Optional[str]   = None
+    _category:         Optional[str]   = None
+    _amount:           Optional[float] = None
+    _product_name:     Optional[str]   = None
+    _description:      Optional[str]   = None
+    _transaction_date: Optional[str]   = None
+    _quantity:         Optional[float] = None
 
     model_config = {"populate_by_name": True}
 
