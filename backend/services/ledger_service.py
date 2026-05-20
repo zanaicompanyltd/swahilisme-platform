@@ -1,7 +1,7 @@
 """
 backend/services/ledger_service.py
-Works with your teammate's exact schema (ledger.py).
-Uses TransactionType.MAPATO / GHARAMA (uppercase enums).
+Uses plain strings for type/category — matches Supabase VARCHAR columns.
+NO enum comparisons anywhere.
 """
 import uuid
 from datetime import datetime, timedelta
@@ -10,11 +10,9 @@ from typing import Optional
 from sqlalchemy import select, func, and_
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from models.ledger import (
-    Transaction, TransactionType, TransactionCategory,
-    TransactionSource,
-)
+from models.ledger import Transaction
 from models.user import User
+
 
 # ── User ──────────────────────────────────────────────────────────────────────
 
@@ -30,25 +28,46 @@ async def get_or_create_user(db: AsyncSession, user_id: str) -> User:
 
 # ── Transaction CRUD ──────────────────────────────────────────────────────────
 
-# ledger_service.py — fix create_transaction
-async def create_transaction(db, user_id, tx_type, category, amount, ...):
-    
-    # ✅ Convert enum to string if needed
+async def create_transaction(
+    db: AsyncSession,
+    user_id: str,
+    tx_type,           # accepts string "mapato"/"gharama" OR enum
+    category,          # accepts string OR enum
+    amount: float,
+    description: str = "",
+    transaction_date=None,
+    source: str = "manual",
+    raw_transcript: Optional[str] = None,
+    nlp_confidence: Optional[float] = None,
+    product_name: Optional[str] = None,
+    quantity: Optional[float] = None,
+    unit_price: Optional[float] = None,
+    nlp_entities: Optional[dict] = None,
+    local_id: Optional[str] = None,
+) -> Transaction:
+
+    # ✅ Convert enum to string if needed — works whether passed as enum or string
     type_str     = tx_type.value if hasattr(tx_type, "value") else str(tx_type)
     category_str = category.value if hasattr(category, "value") else str(category)
-    
-    if type_str in ("mapato", "income"):
-        revenue, cost = amount, 0.0
+
+    # ✅ Normalize: income→mapato, expense→gharama
+    if type_str in ("income", "revenue"):
+        type_str = "mapato"
+    elif type_str in ("expense", "purchase"):
+        type_str = "gharama"
+
+    if type_str == "mapato":
+        revenue, cost = float(amount), 0.0
     else:
-        revenue, cost = 0.0, amount
+        revenue, cost = 0.0, float(amount)
     profit = revenue - cost
 
     tx = Transaction(
         id=str(uuid.uuid4()),
         user_id=user_id,
-        type=type_str,        # ✅ plain string
-        category=category_str, # ✅ plain string
-        amount=amount,
+        type=type_str,
+        category=category_str,
+        amount=float(amount),
         revenue=revenue,
         cost=cost,
         profit=profit,
@@ -72,51 +91,42 @@ async def create_transaction(db, user_id, tx_type, category, amount, ...):
 
 
 async def get_transactions(
-    db, user_id, limit=50, offset=0,
-    tx_type=None, category=None, date_from=None, date_to=None,
+    db: AsyncSession,
+    user_id: str,
+    limit: int = 50,
+    offset: int = 0,
+    tx_type=None,
+    category=None,
+    date_from=None,
+    date_to=None,
 ):
     stmt = (
         select(Transaction)
         .where(Transaction.user_id == user_id)
-        # ✅ Changed from timestamp to transaction_date
         .order_by(Transaction.transaction_date.desc())
-        .limit(limit).offset(offset)
+        .limit(limit)
+        .offset(offset)
     )
-    # In get_transactions — change type filter:
+
     if tx_type:
+        # ✅ Convert enum to string for comparison
         type_str = tx_type.value if hasattr(tx_type, "value") else str(tx_type)
-        stmt = stmt.where(Transaction.type == type_str)  # ✅ string comparison
-    
-    # In get_summary — change the where clause:
-    stmt = select(...).where(and_(
-        Transaction.user_id == user_id,
-        Transaction.transaction_date >= since,
-    ))
-    # In get_top_products — change the type filter:
-    .where(and_(
-        Transaction.user_id == user_id,
-        Transaction.type == "mapato",   # ✅ plain string
-        Transaction.transaction_date >= since,
-    ))
-    
-    # In get_spending_by_category:
-    .where(and_(
-        Transaction.user_id == user_id,
-        Transaction.type == "gharama",  # ✅ plain string
-        Transaction.transaction_date >= since,
-    ))
+        stmt = stmt.where(Transaction.type == type_str)
+
     if category:
-        stmt = stmt.where(Transaction.category == category)
+        cat_str = category.value if hasattr(category, "value") else str(category)
+        stmt = stmt.where(Transaction.category == cat_str)
+
     if date_from:
-        # ✅ Changed from timestamp to transaction_date
         stmt = stmt.where(Transaction.transaction_date >= date_from)
+
     if date_to:
-        # ✅ Changed from timestamp to transaction_date
         stmt = stmt.where(Transaction.transaction_date <= date_to)
+
     return list((await db.execute(stmt)).scalars().all())
 
 
-async def delete_transaction(db, tx_id, user_id):
+async def delete_transaction(db: AsyncSession, tx_id: str, user_id: str) -> bool:
     result = await db.execute(
         select(Transaction).where(
             and_(Transaction.id == tx_id, Transaction.user_id == user_id)
@@ -132,7 +142,7 @@ async def delete_transaction(db, tx_id, user_id):
 
 # ── Analytics ─────────────────────────────────────────────────────────────────
 
-async def get_summary(db, user_id, days=30):
+async def get_summary(db: AsyncSession, user_id: str, days: int = 30) -> dict:
     since = datetime.utcnow() - timedelta(days=days)
     stmt = select(
         func.coalesce(func.sum(Transaction.revenue), 0).label("total_revenue"),
@@ -141,22 +151,29 @@ async def get_summary(db, user_id, days=30):
         func.count(Transaction.id).label("transactions_count"),
     ).where(and_(
         Transaction.user_id == user_id,
-        # ✅ Changed from timestamp to transaction_date
         Transaction.transaction_date >= since,
     ))
-    row = (await db.execute(stmt)).one()
+    row     = (await db.execute(stmt)).one()
     revenue = float(row.total_revenue)
     cost    = float(row.total_cost)
     profit  = float(row.total_profit)
     margin  = round(profit / revenue * 100, 1) if revenue else 0.0
     return {
-        "total_revenue": revenue, "total_cost": cost,
-        "net_profit": profit, "profit_margin": margin,
-        "transactions_count": row.transactions_count, "days": days,
+        "total_revenue":      revenue,
+        "total_cost":         cost,
+        "net_profit":         profit,
+        "profit_margin":      margin,
+        "transactions_count": row.transactions_count,
+        "days":               days,
     }
 
 
-async def get_top_products(db, user_id, days=30, limit=5):
+async def get_top_products(
+    db: AsyncSession,
+    user_id: str,
+    days: int = 30,
+    limit: int = 5,
+) -> list:
     since = datetime.utcnow() - timedelta(days=days)
     stmt = (
         select(
@@ -165,8 +182,7 @@ async def get_top_products(db, user_id, days=30, limit=5):
         )
         .where(and_(
             Transaction.user_id == user_id,
-            Transaction.type == TransactionType.MAPATO,
-            # ✅ Changed from timestamp to transaction_date
+            Transaction.type == "mapato",      # ✅ plain string
             Transaction.transaction_date >= since,
         ))
         .group_by(func.coalesce(Transaction.product_name, "Nyingine"))
@@ -177,7 +193,11 @@ async def get_top_products(db, user_id, days=30, limit=5):
     return [{"name": r.name, "revenue": float(r.revenue)} for r in rows]
 
 
-async def get_spending_by_category(db, user_id, days=30):
+async def get_spending_by_category(
+    db: AsyncSession,
+    user_id: str,
+    days: int = 30,
+) -> list:
     since = datetime.utcnow() - timedelta(days=days)
     stmt = (
         select(
@@ -186,32 +206,34 @@ async def get_spending_by_category(db, user_id, days=30):
         )
         .where(and_(
             Transaction.user_id == user_id,
-            Transaction.type == TransactionType.GHARAMA,
-            # ✅ Changed from timestamp to transaction_date
+            Transaction.type == "gharama",     # ✅ plain string
             Transaction.transaction_date >= since,
         ))
         .group_by(Transaction.category)
         .order_by(func.sum(Transaction.amount).desc())
     )
-    rows = (await db.execute(stmt)).all()
+    rows  = (await db.execute(stmt)).all()
     total = sum(float(r.amount) for r in rows) or 1
     return [
-        {"category": str(r.category), "amount": float(r.amount),
-         "percent": round(float(r.amount) / total * 100, 1)}
+        {
+            "category": str(r.category),
+            "amount":   float(r.amount),
+            "percent":  round(float(r.amount) / total * 100, 1),
+        }
         for r in rows
     ]
 
 
 # ── Offline sync ──────────────────────────────────────────────────────────────
 
-async def get_pending_sync_count(db, user_id):
+async def get_pending_sync_count(db: AsyncSession, user_id: str) -> int:
     stmt = select(func.count(Transaction.id)).where(
         and_(Transaction.user_id == user_id, Transaction.is_synced == False)  # noqa
     )
     return (await db.execute(stmt)).scalar() or 0
 
 
-async def flush_sync_queue(db, user_id):
+async def flush_sync_queue(db: AsyncSession, user_id: str) -> dict:
     stmt = select(Transaction).where(
         and_(Transaction.user_id == user_id, Transaction.is_synced == False)  # noqa
     )
