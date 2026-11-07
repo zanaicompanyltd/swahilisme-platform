@@ -320,6 +320,68 @@ npm start
 
 ---
 
+## 🚀 Deployment (Railway / Docker)
+
+### Import root — read this before changing anything
+
+The backend modules import each other with **flat top-level paths**:
+
+```python
+from db.database import init_db      # not backend.db.database
+from models.user import User         # not backend.models.user
+from services.otp_service import ... # not backend.services.otp_service
+from api.routes.auth import router   # not backend.api.routes.auth
+```
+
+That convention means **`backend/` itself must be the import root** — i.e. it
+must be on `sys.path` / `PYTHONPATH`. Everything below follows from that rule:
+
+| Context | Correct command | Import root |
+|---|---|---|
+| Docker / Railway | `/app/start.sh` | `/app/backend` (`WORKDIR` + `PYTHONPATH`) |
+| Local dev | `cd backend && uvicorn api.app:app --reload` | `backend/` (cwd) |
+| Local dev (script) | `python run.py` | `backend/` (set by the script) |
+
+⚠️ `uvicorn backend.api.app:app` will **not** work — it puts the repo root on
+`sys.path`, where no `db` / `models` / `services` package exists, and the app
+dies with `ModuleNotFoundError: No module named 'db'`.
+
+### Railway service settings
+
+- **Start Command**: leave it **empty** (the image's `CMD ["/app/start.sh"]`
+  is used), or set it to exactly `/app/start.sh`.
+- **PORT**: Railway injects it; `start.sh` reads it and binds `0.0.0.0:$PORT`,
+  falling back to `8000` when unset and ignoring non-numeric values.
+
+🚫 **Do not put `--port $PORT` in the Railway Start Command.** Railway does not
+always run that command through a shell, so `$PORT` arrives at uvicorn
+literally and the container crash-loops with:
+
+```text
+Error: Invalid value for '--port': '$PORT' is not a valid integer.
+```
+
+That is exactly why the port is resolved inside `start.sh` instead of in the
+start command. If a Start Command is saved in the Railway dashboard it
+overrides the Dockerfile `CMD`, so clear it (or point it at `/app/start.sh`)
+after deploying.
+
+### Required environment variables
+
+| Variable | Example | Notes |
+|---|---|---|
+| `DB_MODE` | `postgresql` | `sqlite` only for local dev |
+| `DATABASE_URL` | `postgresql://user:pass@host:5432/db` | Supabase URL; `postgres://` is auto-rewritten to `postgresql+asyncpg://` |
+| `GROQ_API_KEY` | `gsk_...` | Falls back to regex/mock services when unset |
+| `JWT_SECRET` | random string | Never hard-code |
+
+> Note: `api/routes/daftari.py` uses PostgreSQL-only SQL
+> (`CURRENT_DATE - INTERVAL '30 days'`), so `/daftari/spending` and
+> `/daftari/top-products` only return data on PostgreSQL, not on the SQLite
+> fallback.
+
+---
+
 ## 📱 WhatsApp Integration (1.7)
 
 Weekly business summaries sent automatically every Sunday at 8:00 AM EAT:

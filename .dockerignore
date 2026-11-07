@@ -1,0 +1,31 @@
+# Build/run artefacts that must never enter the runtime image.
+# NOTE: keep this file conservative — anything the backend imports at runtime
+# (backend/**, requirements.txt) must stay included.
+.git
+.gitignore
+.github
+**/__pycache__
+**/*.py[cod]
+**/.pytest_cache
+**/.mypy_cache
+.venv
+venv
+env
+**/node_modules
+**/.next
+frontend/.env
+**/.env
+.env.*
+*.db
+*.sqlite
+*.sqlite3
+notebooks
+reports
+docs
+tests
+coverage
+.coverage
+htmlcov
+*.log
+logs/
+.DS_Store
