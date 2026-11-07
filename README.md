@@ -424,6 +424,38 @@ start command. If a Start Command is saved in the Railway dashboard it
 overrides the Dockerfile `CMD`, so clear it (or point it at `/app/start.sh`)
 after deploying.
 
+### Frontend says “Failed to fetch” (login / register does nothing)
+
+That message comes from the **browser**, not the API: no response reached it
+that it was allowed to read (dead host, service down, or missing CORS headers).
+The backend's own log tells you nothing — it never saw the request.
+
+Check the URL the build is actually calling:
+
+```bash
+curl -i https://<your-service>.up.railway.app/health
+```
+
+| Result | Meaning | Fix |
+|---|---|---|
+| `{"status":"ok"}` | API reachable | The build calls a different URL — set `REACT_APP_API_URL` to this one and redeploy |
+| Railway page *“The train has not arrived at the station”* with **404** | Domain is **not provisioned** for that service | Railway → service → **Settings → Networking → Public Networking** → generate/copy the domain, then use that URL |
+| Timeout / connection refused | Service down or not exposed | Check the deploy logs; generate a public domain |
+
+Set the copied URL in **both** places, then redeploy the frontend:
+
+1. `frontend/.env` → `REACT_APP_API_URL=https://<current-domain>`
+2. Vercel → Project → **Settings → Environment Variables** → same name/value
+   (Production), then **Redeploy without build cache**.
+
+The login card now runs a `/health` probe on load and shows an orange banner
+with the exact URL it cannot reach, so a stale domain is visible immediately
+instead of only after submitting the form. The same URL is included in the
+network error message (`Failed to fetch: <url> — …`).
+
+`/health` is also the endpoint to check in the browser directly — it returns
+`{"status":"ok","db_mode":"postgresql"}` when the API and database are up.
+
 ### Required environment variables
 
 | Variable | Example | Notes |
@@ -431,7 +463,7 @@ after deploying.
 | `DB_MODE` | `postgresql` | `sqlite` only for local dev |
 | `DATABASE_URL` | `postgresql://user:pass@host:5432/db` | Supabase URL; `postgres://` is auto-rewritten to `postgresql+asyncpg://` |
 | `GROQ_API_KEY` | `gsk_...` | Falls back to regex/mock services when unset |
-| `JWT_SECRET` | random string | Never hard-code |
+| `JWT_SECRET_KEY` | random string | Never hard-code. Without it every restart generates an ephemeral key and all issued tokens stop working |
 
 > Note: `api/routes/daftari.py` uses PostgreSQL-only SQL
 > (`CURRENT_DATE - INTERVAL '30 days'`), so `/daftari/spending` and

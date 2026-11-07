@@ -10,6 +10,45 @@ const BASE_URL = (
   process.env.REACT_APP_API_URL || "http://localhost:8000"
 ).replace(/\/$/, ""); // strip trailing slash
 
+// A production bundle that still points at localhost can never work — say so
+// loudly instead of failing silently in the browser console.
+if (
+  process.env.NODE_ENV === "production" &&
+  /localhost|127\.0\.0\.1/.test(BASE_URL)
+) {
+  // eslint-disable-next-line no-console
+  console.warn(
+    "[SwahiliSME] REACT_APP_API_URL is not set for this build; falling back to " +
+      BASE_URL +
+      ". Set it to the Railway backend URL and redeploy."
+  );
+}
+
+/**
+ * Ping the backend so the UI can report an unreachable API instead of showing
+ * a bare "Failed to fetch". Returns { ok, url, status }.
+ */
+export async function checkApiHealth(timeoutMs = 6000) {
+  const url = `${BASE_URL}/health`;
+
+  // In tests / non-browser environments there may be no fetch at all.
+  if (typeof fetch !== "function") return { ok: false, url, status: 0 };
+
+  let timer;
+  try {
+    const controller = typeof AbortController === "function" ? new AbortController() : null;
+    if (controller) timer = setTimeout(() => controller.abort(), timeoutMs);
+    const res = await fetch(url, controller ? { signal: controller.signal } : undefined);
+    return { ok: res.ok, url, status: res.status };
+  } catch {
+    return { ok: false, url, status: 0 };
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+}
+
+export { BASE_URL };
+
 // ── Offline queue ─────────────────────────────────────────────────────────────
 const OFFLINE_QUEUE_KEY = "daftari_offline_queue";
 
@@ -62,8 +101,12 @@ async function apiFetch(path, options = {}, lang = "sw") {
       ...options,
     });
   } catch (networkErr) {
-    // Network failure (offline, CORS, wrong URL, etc.)
-    throw new Error(`Failed to fetch: ${url} — ${networkErr.message}`);
+    // Network failure: the API host is down/unreachable, CORS blocked the
+    // response, or REACT_APP_API_URL points somewhere that is not the backend.
+    throw new Error(
+      `Failed to fetch: ${url} — seva haipatikani / cannot reach the API ` +
+        `(check REACT_APP_API_URL). ${networkErr.message}`
+    );
   }
 
   if (!res.ok) {

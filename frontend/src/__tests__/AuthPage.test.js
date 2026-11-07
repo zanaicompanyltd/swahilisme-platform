@@ -71,3 +71,138 @@ describe("AuthPage (password login, no OTP)", () => {
     expect(registerHtml).toMatch(/Ingia/);    // "Already have an account? Sign in"
   });
 });
+
+// ── Field-level validation (interaction tests) ───────────────────────────────
+// Regression guard for a bug where a touched password field always showed its
+// error string: users saw "Manenosiri hayafanani" with two identical passwords
+// and "Nenosiri lazima liwe na herufi 8 au zaidi" while typing a long one.
+import ReactDOM from "react-dom/client";
+import { act } from "react-dom/test-utils";
+
+global.IS_REACT_ACT_ENVIRONMENT = true;
+
+const setValue = (input, value) => {
+  const setter = Object.getOwnPropertyDescriptor(
+    window.HTMLInputElement.prototype,
+    "value"
+  ).set;
+  setter.call(input, value);
+  input.dispatchEvent(new Event("input", { bubbles: true }));
+};
+
+const submitForm = (container) =>
+  container.querySelector("form").dispatchEvent(
+    new Event("submit", { bubbles: true, cancelable: true })
+  );
+
+async function renderPage(step) {
+  const auth = makeAuth(step);
+  auth.login = jest.fn(async () => ({}));
+  auth.register = jest.fn(async () => ({}));
+
+  const container = document.createElement("div");
+  document.body.appendChild(container);
+  const root = ReactDOM.createRoot(container);
+  await act(async () => {
+    root.render(<AuthPage authHook={auth} />);
+    await Promise.resolve();
+  });
+
+  return {
+    auth,
+    container,
+    passwords: () => container.querySelectorAll('input[type="password"]'),
+    textInputs: () => container.querySelectorAll('input[type="text"], input[type="email"]'),
+    phone: () => container.querySelector('input[type="tel"]'),
+    text: () => container.textContent,
+    unmount: async () => {
+      await act(async () => root.unmount());
+      container.remove();
+    },
+  };
+}
+
+describe("password validation feedback", () => {
+  beforeEach(() => {
+    // Keep the API health probe from making a real request.
+    global.fetch = jest.fn(() => Promise.resolve({ ok: true, status: 200 }));
+  });
+
+  test("login form: 8+ characters shows the hint, never the length error", async () => {
+    const page = await renderPage("login");
+    const [pw] = page.passwords();
+
+    await act(async () => { setValue(pw, "abcdefgh"); });
+
+    expect(page.text()).toMatch(/Angalau herufi 8/);
+    expect(page.text()).not.toMatch(/Nenosiri lazima liwe na herufi 8 au zaidi/);
+    await page.unmount();
+  });
+
+  test("login with a short password surfaces the length error on submit", async () => {
+    const page = await renderPage("login");
+    const [pw] = page.passwords();
+
+    await act(async () => {
+      setValue(pw, "abc");
+      submitForm(page.container);
+    });
+
+    expect(page.text()).toMatch(/Nenosiri lazima liwe na herufi 8 au zaidi/);
+    expect(page.auth.login).not.toHaveBeenCalled();
+    await page.unmount();
+  });
+
+  test("register with identical 8+ character passwords submits without errors", async () => {
+    const page = await renderPage("register");
+    const [pw, confirm] = page.passwords();
+    const [fullName] = page.textInputs();
+
+    await act(async () => {
+      setValue(pw, "NenosiriSalama1");
+      setValue(confirm, "NenosiriSalama1");
+      setValue(fullName, "Mama Zena");
+      setValue(page.phone(), "0712345678");
+      submitForm(page.container);
+    });
+
+    expect(page.text()).not.toMatch(/Manenosiri hayafanani/);
+    expect(page.text()).not.toMatch(/Nenosiri lazima liwe na herufi 8 au zaidi/);
+    expect(page.auth.register).toHaveBeenCalledTimes(1);
+    expect(page.auth.register.mock.calls[0][0]).toMatchObject({
+      phone_number: "0712345678",
+      password: "NenosiriSalama1",
+      full_name: "Mama Zena",
+    });
+    await page.unmount();
+  });
+
+  test("register with different passwords surfaces the mismatch error on submit", async () => {
+    const page = await renderPage("register");
+    const [pw, confirm] = page.passwords();
+    const [fullName] = page.textInputs();
+
+    await act(async () => {
+      setValue(pw, "NenosiriSalama1");
+      setValue(confirm, "NenosiriSalama2");
+      setValue(fullName, "Mama Zena");
+      setValue(page.phone(), "0712345678");
+      submitForm(page.container);
+    });
+
+    expect(page.text()).toMatch(/Manenosiri hayafanani/);
+    expect(page.auth.register).not.toHaveBeenCalled();
+    await page.unmount();
+  });
+
+  test("an unreachable API is reported together with the URL being used", async () => {
+    global.fetch = jest.fn(() => Promise.reject(new TypeError("Failed to fetch")));
+
+    const page = await renderPage("login");
+    await act(async () => { await Promise.resolve(); });
+
+    expect(page.text()).toMatch(/Seva haipatikani/);
+    expect(page.text()).toMatch(/\/health/);
+    await page.unmount();
+  });
+});

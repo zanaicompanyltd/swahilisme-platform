@@ -7,6 +7,7 @@
 
 import React, { useState, useEffect } from "react";
 import { AUTH_STEP, PASSWORD_MIN_LENGTH } from "../hooks/useAuth";
+import { checkApiHealth } from "../hooks/useApi";
 
 // ── i18n strings ─────────────────────────────────────────────────────────
 const T = {
@@ -35,6 +36,7 @@ const T = {
     email:            "Barua Pepe (si lazima)",
     privacyNote:      "Nenosiri lako limehifadhiwa kwa usimbaji fiche. Taarifa zako hazitashirikishwa na mtu yeyote.",
     footerNote:       "Unahitaji msaada? Wasiliana nasi kwa WhatsApp.",
+    apiDown:          "Seva haipatikani. Angalia uunganishaji wa API.",
     fieldRequired:    "Sehemu hii inahitajika",
     phoneInvalid:     "Nambari ya simu si sahihi",
     passwordTooShort: `Nenosiri lazima liwe na herufi ${PASSWORD_MIN_LENGTH} au zaidi`,
@@ -71,6 +73,7 @@ const T = {
     email:            "Email (optional)",
     privacyNote:      "Your password is stored only as a secure hash. Your information will not be shared.",
     footerNote:       "Need help? Contact us on WhatsApp.",
+    apiDown:          "Cannot reach the server. Check the API connection.",
     fieldRequired:    "This field is required",
     phoneInvalid:     "Invalid phone number",
     passwordTooShort: `Password must be at least ${PASSWORD_MIN_LENGTH} characters`,
@@ -87,7 +90,7 @@ const T = {
 const TZ_PHONE_RE = /^(\+?255|0)\d{9}$/;
 
 // ── Reusable password input with show/hide ────────────────────────────────
-function PasswordField({ label, value, onChange, placeholder, hint, touched, showError, showKey, onToggle, t, autoComplete }) {
+function PasswordField({ label, value, onChange, placeholder, hint, error, showKey, onToggle, t, autoComplete }) {
   return (
     <div style={{ marginBottom: 14 }}>
       <label style={styles.label}>{label}</label>
@@ -98,6 +101,7 @@ function PasswordField({ label, value, onChange, placeholder, hint, touched, sho
           onChange={(e) => onChange(e.target.value)}
           placeholder={placeholder}
           autoComplete={autoComplete}
+          aria-invalid={!!error}
           style={{ ...styles.input, paddingRight: 70 }}
         />
         <button
@@ -109,8 +113,32 @@ function PasswordField({ label, value, onChange, placeholder, hint, touched, sho
           {showKey ? t.hide : t.show}
         </button>
       </div>
-      {hint && !(touched && showError) && <p style={styles.hint}>{hint}</p>}
-      {touched && showError && <p style={styles.fieldError}>{showError}</p>}
+      {error
+        ? <p style={styles.fieldError}>{error}</p>
+        : hint && <p style={styles.hint}>{hint}</p>}
+    </div>
+  );
+}
+
+// ── API reachability banner ───────────────────────────────────────────────
+// Shows the exact backend URL the browser is calling when it cannot be
+// reached (wrong REACT_APP_API_URL, service asleep, domain not provisioned…).
+// A wrong/dead API host is what produces the bare "Failed to fetch" error.
+function ApiStatusBanner({ t }) {
+  const [status, setStatus] = useState(null);
+
+  useEffect(() => {
+    let alive = true;
+    checkApiHealth().then((result) => { if (alive) setStatus(result); });
+    return () => { alive = false; };
+  }, []);
+
+  if (!status || status.ok) return null;
+
+  return (
+    <div style={styles.apiDown} role="status">
+      <p style={styles.apiDownText}>{t.apiDown}</p>
+      <code style={styles.apiDownUrl}>{status.url}</code>
     </div>
   );
 }
@@ -164,8 +192,7 @@ function LoginForm({ t, auth }) {
         onChange={setPassword}
         placeholder="••••••••"
         hint={t.passwordHint}
-        touched={touched.password}
-        showError={t.passwordTooShort}
+        error={touched.password && !passOk ? t.passwordTooShort : null}
         showKey={show}
         onToggle={() => setShow((s) => !s)}
         t={t}
@@ -251,8 +278,7 @@ function RegisterForm({ t, auth }) {
         onChange={(v) => set("password", v)}
         placeholder="••••••••"
         hint={t.passwordHint}
-        touched={touched.password}
-        showError={t.passwordTooShort}
+        error={touched.password && !passOk ? t.passwordTooShort : null}
         showKey={show}
         onToggle={() => setShow((s) => !s)}
         t={t}
@@ -264,8 +290,12 @@ function RegisterForm({ t, auth }) {
         value={form.confirm}
         onChange={(v) => set("confirm", v)}
         placeholder="••••••••"
-        touched={touched.confirm}
-        showError={t.passwordMismatch}
+        error={
+          !touched.confirm ? null
+            : !form.confirm ? t.fieldRequired
+            : !matchOk      ? t.passwordMismatch
+            : null
+        }
         showKey={show}
         onToggle={() => setShow((s) => !s)}
         t={t}
@@ -364,6 +394,8 @@ export default function AuthPage({ authHook, onAuthenticated }) {
             {t.langToggle}
           </button>
         </div>
+
+        <ApiStatusBanner t={t} />
 
         {/* Login / Register switch */}
         <div style={styles.tabBar}>
@@ -553,6 +585,26 @@ const styles = {
     margin: "4px 0 0",
     fontSize: 12,
     color: "#888780",
+  },
+  apiDown: {
+    background: "#FFF4E5",
+    border: "1px solid #E0A100",
+    borderRadius: 10,
+    padding: "10px 12px",
+    marginBottom: 16,
+  },
+  apiDownText: {
+    margin: 0,
+    fontSize: 12,
+    fontWeight: 600,
+    color: "#7A4B00",
+  },
+  apiDownUrl: {
+    display: "block",
+    marginTop: 4,
+    fontSize: 11,
+    color: "#7A4B00",
+    wordBreak: "break-all",
   },
   errorBox: {
     background: "#FCEBEB",
