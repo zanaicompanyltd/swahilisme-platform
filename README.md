@@ -320,6 +320,57 @@ npm start
 
 ---
 
+## 🔐 Authentication
+
+**Password login only — there is no SMS/OTP step.** The Africa's Talking SMS
+OTP flow (and the WhatsApp OTP fallback) has been removed.
+
+### Flow
+
+```
+Register:  POST /auth/register   { phone_number, full_name, password, ...profile }
+           → 201 { access_token, refresh_token, user }        (logged in immediately)
+
+Login:     POST /auth/login      { phone_number, password }
+           → 200 { access_token, refresh_token, user }
+
+Refresh:   POST /auth/refresh    { refresh_token }  → 200 { access_token }
+Me:        GET  /auth/me         Authorization: Bearer <access_token>
+Set/change password:
+           POST /auth/set-password { new_password, current_password? }
+           Authorization: Bearer <access_token>
+```
+
+### Security properties
+
+- Passwords are hashed with **bcrypt** (cost 12) and never returned by the API;
+  `user.to_dict()` exposes only `has_password: true|false`.
+- Minimum length 8 characters, maximum 72 bytes (bcrypt limit).
+- A wrong password and an unknown phone number return the **same** 401 message,
+  so the API cannot be used to discover which numbers have accounts.
+- `/auth/set-password` requires a valid Bearer token: it cannot be used to take
+  over an account you are not already signed in to.
+- `JWT_SECRET_KEY` must be set in production. If it is missing the server
+  generates a random per-process key (tokens then stop working after a restart,
+  but tokens can never be forged with a publicly known default).
+- Logout is client-side: JWTs are stateless, so the browser discards the tokens
+  (access 60 min, refresh 30 days).
+
+### Existing accounts created during the OTP era
+
+Their rows are untouched and the `otp_codes` table is preserved. Those rows
+have `password_hash = NULL`, so they cannot log in until a password is set:
+
+- while they still hold a valid token → `POST /auth/set-password` without
+  `current_password`;
+- otherwise an operator must reset the password for that user.
+
+The new `users.password_hash` column is added automatically at startup by an
+additive migration in `db/database.py` (`create_all()` never alters existing
+tables). Existing rows keep `NULL`; no data is deleted.
+
+---
+
 ## 🚀 Deployment (Railway / Docker)
 
 ### Import root — read this before changing anything
@@ -329,7 +380,7 @@ The backend modules import each other with **flat top-level paths**:
 ```python
 from db.database import init_db      # not backend.db.database
 from models.user import User         # not backend.models.user
-from services.otp_service import ... # not backend.services.otp_service
+from services.auth_service import ... # not backend.services.auth_service
 from api.routes.auth import router   # not backend.api.routes.auth
 ```
 

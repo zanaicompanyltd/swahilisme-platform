@@ -25,6 +25,10 @@ class User(Base):
     whatsapp_opt_in   = Column(Boolean,     default=False)
     created_at        = Column(DateTime(timezone=True), default=func.now())
     phone_verified    = Column(Boolean,     default=False, nullable=False)
+    # bcrypt hash of the user password. NULL for accounts created during the
+    # OTP-only era — those users set a password via POST /auth/set-password
+    # while holding a valid token. Never exposed through to_dict().
+    password_hash     = Column(String(255), nullable=True)
     status            = Column(SAEnum(UserStatus), default=UserStatus.pending, nullable=False)
     email             = Column(String(255), nullable=True)
     email_verified    = Column(Boolean,     default=False, nullable=False)
@@ -46,6 +50,12 @@ class User(Base):
     def phone(self):
         return self.phone_number
 
+    @property
+    def has_password(self) -> bool:
+        """True when the account can log in with a password.
+        The hash itself is never serialised."""
+        return bool(self.password_hash)
+
     def to_dict(self) -> dict:
         return {
             "id":               self.id,
@@ -56,6 +66,7 @@ class User(Base):
             "location":         self.location,
             "whatsapp_opt_in":  self.whatsapp_opt_in,
             "phone_verified":   self.phone_verified,
+            "has_password":     bool(self.password_hash),
             "email":            self.email,
             "email_verified":   self.email_verified,
             "business_category":self.business_category,

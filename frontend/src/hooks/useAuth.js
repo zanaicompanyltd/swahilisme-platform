@@ -1,10 +1,9 @@
 // useAuth.js — Swahilisme Platform
-// Manages the full auth flow: send OTP → verify → register/login
-// Bilingual (sw/en). Phone primary, email optional
+// Password-based authentication (phone number + password → JWT tokens).
 //
-// FIX 1: API_BASE now reads REACT_APP_API_URL (same as useApi.js)
-//         Backend has NO /api/v1 prefix — auth routes are at /auth/...
-// FIX 2: apiFetch throws proper Error (never plain object → no [object Object])
+// The SMS/WhatsApp OTP flow was removed: there is no "send code" or "verify
+// code" step anymore. Accounts are created with a password, and the password
+// is what proves identity at login.
 
 import { useState, useCallback, useEffect } from "react";
 
@@ -15,11 +14,12 @@ const REFRESH_KEY = "swahilisme_refresh_token";
 const USER_KEY    = "swahilisme_user";
 
 export const AUTH_STEP = {
-  PHONE:    "phone",
-  OTP:      "otp",
+  LOGIN:    "login",
   REGISTER: "register",
   DONE:     "done",
 };
+
+export const PASSWORD_MIN_LENGTH = 8;
 
 // ── Safely extract a readable string from any backend detail shape ─────────────
 // Backend returns detail as EITHER:
@@ -28,6 +28,9 @@ export const AUTH_STEP = {
 function extractError(detail, lang = "sw") {
   if (!detail) return "Hitilafu isiyojulikana.";
   if (typeof detail === "string") return detail;
+  if (Array.isArray(detail)) {
+    return detail.map((e) => e.msg || JSON.stringify(e)).join(", ");
+  }
   if (typeof detail === "object") {
     return detail[lang] || detail.sw || detail.en
       || Object.values(detail)[0]
@@ -37,52 +40,36 @@ function extractError(detail, lang = "sw") {
 }
 
 // ── Internal fetch — always throws a proper Error with a readable message ──────
-// useAuth.js
-// ── Internal fetch — always throws a proper Error with a readable message ──────
-const apiFetch = async (url, options = {}) => {
-  try {
-    // 1. Ensure headers object exists and has Content-Type set for JSON payloads
-    const headers = {
-      "Content-Type": "application/json",
-      ...(options.headers || {}),
-    };
+const apiFetch = async (url, options = {}, lang = "sw") => {
+  const headers = {
+    "Content-Type": "application/json",
+    ...(options.headers || {}),
+  };
 
-    // 2. Prepend the API_BASE to the incoming relative URL path
-    const fullUrl = `${API_BASE}${url}`;
+  const response = await fetch(`${API_BASE}${url}`, { ...options, headers });
 
-    const response = await fetch(fullUrl, { ...options, headers });
-    
-    if (!response.ok) {
-      // Extract detailed backend message if available
-      let errorDetail;
-      try {
-        const errorJson = await response.json();
-        errorDetail = errorJson.detail;
-      } catch {
-        errorDetail = `HTTP error! status: ${response.status}`;
-      }
-      throw new Error(typeof errorDetail === 'object' ? JSON.stringify(errorDetail) : errorDetail);
+  if (!response.ok) {
+    let detail;
+    try {
+      const body = await response.json();
+      detail = body.detail;
+    } catch {
+      detail = `HTTP error! status: ${response.status}`;
     }
-    
-    return await response.json();
-  } catch (error) {
-    console.error("Network or API error:", error);
-    throw error;
+    throw new Error(extractError(detail, lang));
   }
+  return response.json();
 };
 
 // ── Hook ──────────────────────────────────────────────────────────────────────
 export default function useAuth() {
-  const [step,           setStep]           = useState(AUTH_STEP.PHONE);
-  const [phone,          setPhone]          = useState("");
-  const [deliveryMethod, setDeliveryMethod] = useState("sms");
-  const [lang,           setLang]           = useState("sw");
-  const [user,           setUser]           = useState(() => {
+  const [step,  setStep]  = useState(AUTH_STEP.LOGIN);
+  const [lang,  setLang]  = useState("sw");
+  const [user,  setUser]  = useState(() => {
     try { return JSON.parse(localStorage.getItem(USER_KEY)); } catch { return null; }
   });
-  const [loading,         setLoading]         = useState(false);
-  const [error,           setError]           = useState(null);
-  const [resendCountdown, setResendCountdown] = useState(0);
+  const [loading, setLoading] = useState(false);
+  const [error,   setError]   = useState(null);
 
   // ── Restore session on mount ───────────────────────────────────────────────
   useEffect(() => {
@@ -96,13 +83,6 @@ export default function useAuth() {
     }
   }, []);
 
-  // ── Resend countdown ───────────────────────────────────────────────────────
-  useEffect(() => {
-    if (resendCountdown <= 0) return;
-    const t = setTimeout(() => setResendCountdown((c) => c - 1), 1000);
-    return () => clearTimeout(t);
-  }, [resendCountdown]);
-
   // ── Persist tokens + user ──────────────────────────────────────────────────
   const _persistTokens = useCallback((accessToken, refreshTok, userData) => {
     localStorage.setItem(TOKEN_KEY,   accessToken);
@@ -112,95 +92,73 @@ export default function useAuth() {
     setStep(AUTH_STEP.DONE);
   }, []);
 
-  // ── Step 1: Send OTP  →  POST /auth/send-otp ──────────────────────────────
-  const sendOTP = useCallback(async (phoneNumber, method = "sms") => {
+  const _run = useCallback(async (fn) => {
     setLoading(true);
     setError(null);
     try {
-      const result = await apiFetch(
-        "/auth/send-otp",
-        {
-          method: "POST",
-          body: JSON.stringify({
-            phone_number:    phoneNumber,
-            delivery_method: method,
-            lang,
-            purpose:         "login",
-          }),
-        },
-        lang
-      );
-      setPhone(phoneNumber);
-      setDeliveryMethod(result.delivery_method || method);
-      setStep(AUTH_STEP.OTP);
-      setResendCountdown(60);
-      return result;
+      return await fn();
     } catch (err) {
       setError(err.message);
       throw err;
     } finally {
       setLoading(false);
     }
-  }, [lang]);
+  }, []);
 
-  // ── Step 2: Verify OTP  →  POST /auth/verify-otp ─────────────────────────
-  const verifyOTP = useCallback(async (code) => {
-    setLoading(true);
-    setError(null);
-    try {
-      const result = await apiFetch(
-        "/auth/verify-otp",
-        {
-          method: "POST",
-          body: JSON.stringify({ phone_number: phone, code, purpose: "login" }),
-        },
-        lang
-      );
-      if (result.needs_registration) {
-        setStep(AUTH_STEP.REGISTER);
-      } else {
-        _persistTokens(result.access_token, result.refresh_token, result.user);
-      }
-      return result;
-    } catch (err) {
-      setError(err.message);
-      throw err;
-    } finally {
-      setLoading(false);
-    }
-  }, [phone, lang, _persistTokens]);
+  // ── Login  →  POST /auth/login  (phone + password) ─────────────────────────
+  const login = useCallback((phoneNumber, password) => _run(async () => {
+    const result = await apiFetch(
+      "/auth/login",
+      { method: "POST", body: JSON.stringify({ phone_number: phoneNumber, password }) },
+      lang
+    );
+    _persistTokens(result.access_token, result.refresh_token, result.user);
+    return result;
+  }), [_run, lang, _persistTokens]);
 
-  // ── Step 3: Register (new users)  →  POST /auth/register ─────────────────
-  const register = useCallback(async (profileData) => {
-    setLoading(true);
-    setError(null);
-    try {
-      const result = await apiFetch(
-        "/auth/register",
-        {
-          method: "POST",
-          body: JSON.stringify({ phone_number: phone, preferred_lang: lang, ...profileData }),
-        },
-        lang
-      );
-      _persistTokens(result.access_token, result.refresh_token, result.user);
-      return result;
-    } catch (err) {
-      setError(err.message);
-      throw err;
-    } finally {
-      setLoading(false);
+  // ── Register  →  POST /auth/register  (creates the account, logs in) ───────
+  const register = useCallback((profileData) => _run(async () => {
+    const result = await apiFetch(
+      "/auth/register",
+      { method: "POST", body: JSON.stringify({ preferred_lang: lang, ...profileData }) },
+      lang
+    );
+    _persistTokens(result.access_token, result.refresh_token, result.user);
+    return result;
+  }), [_run, lang, _persistTokens]);
+
+  // ── Set / change password  →  POST /auth/set-password (Bearer required) ────
+  // Migration path for accounts created while OTP was the only credential.
+  const setPassword = useCallback((newPassword, currentPassword) => _run(async () => {
+    const token = localStorage.getItem(TOKEN_KEY);
+    if (!token) throw new Error("Not authenticated.");
+    const result = await apiFetch(
+      "/auth/set-password",
+      {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}` },
+        body: JSON.stringify({
+          new_password:     newPassword,
+          current_password: currentPassword || null,
+        }),
+      },
+      lang
+    );
+    if (result.user) {
+      localStorage.setItem(USER_KEY, JSON.stringify(result.user));
+      setUser(result.user);
     }
-  }, [phone, lang, _persistTokens]);
+    return result;
+  }), [_run, lang]);
 
   // ── Logout ─────────────────────────────────────────────────────────────────
+  // JWTs are stateless, so logout clears the credentials from this device.
   const logout = useCallback(() => {
     localStorage.removeItem(TOKEN_KEY);
     localStorage.removeItem(REFRESH_KEY);
     localStorage.removeItem(USER_KEY);
     setUser(null);
-    setStep(AUTH_STEP.PHONE);
-    setPhone("");
+    setStep(AUTH_STEP.LOGIN);
     setError(null);
   }, []);
 
@@ -208,16 +166,13 @@ export default function useAuth() {
 
   return {
     step, setStep,
-    phone, setPhone,
-    deliveryMethod,
     lang, setLang,
     user,
     loading,
     error, setError,
-    resendCountdown,
-    sendOTP,
-    verifyOTP,
+    login,
     register,
+    setPassword,
     logout,
     getToken,
     isAuthenticated: step === AUTH_STEP.DONE && !!user,

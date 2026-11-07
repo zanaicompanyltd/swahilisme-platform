@@ -1,60 +1,91 @@
 """
 Auth Routes — Swahilisme Platform
-POST /auth/send-otp
-POST /auth/verify-otp
-POST /auth/register
-POST /auth/refresh
-GET  /auth/me
+
+POST /auth/register        — create an account (phone + password)
+POST /auth/login           — phone + password → JWT tokens
+POST /auth/refresh         — exchange refresh token for a new access token
+POST /auth/set-password    — set/change password (Bearer token required)
+GET  /auth/me              — current user (Bearer token required)
+
+The SMS/WhatsApp OTP flow (POST /auth/send-otp, POST /auth/verify-otp) has
+been removed: passwords are now the authentication factor.
 """
 
 from fastapi import APIRouter, Depends, HTTPException, status, Header
-from pydantic import BaseModel, Field, EmailStr, validator
-from sqlalchemy.orm import Session
+from pydantic import BaseModel, Field
+from sqlalchemy.ext.asyncio import AsyncSession
 from typing import Optional
 import re
 
 from db.database import get_db
-from models.user import OTPDeliveryMethod
-from services.otp_service import send_otp, verify_otp, _normalize_phone
 from services.auth_service import (
-    register_user, login_user, refresh_access_token, get_current_user
+    AuthError,
+    PASSWORD_MAX_BYTES,
+    PASSWORD_MIN_LENGTH,
+    authenticate_user,
+    get_current_user,
+    issue_tokens,
+    normalize_phone,
+    refresh_access_token,
+    register_user,
+    set_user_password,
+    validate_password_strength,
 )
 
 router = APIRouter(prefix="/auth", tags=["Authentication"])
 
+# ── Shared error messages (bilingual, no internal detail leaked) ──────────
+MSG = {
+    "invalid_credentials":       {"sw": "Nambari ya simu au nenosiri si sahihi.", "en": "Invalid phone number or password."},
+    "account_suspended":         {"sw": "Akaunti imezuiwa.",                     "en": "Account suspended."},
+    "invalid_token":             {"sw": "Token si halali.",                      "en": "Invalid token."},
+    "user_not_found":            {"sw": "Mtumiaji hakupatikana.",                "en": "User not found."},
+    "phone_already_registered":  {"sw": "Nambari hii imeshasajiliwa.",           "en": "Phone number already registered."},
+    "email_already_registered":  {"sw": "Barua pepe hii imeshasajiliwa.",        "en": "Email already registered."},
+    "weak_password":             {"sw": f"Nenosiri lazima liwe na herufi {PASSWORD_MIN_LENGTH} au zaidi.",
+                                  "en": f"Password must be at least {PASSWORD_MIN_LENGTH} characters."},
+    "password_too_long":         {"sw": f"Nenosiri ni refu mno (herufi {PASSWORD_MAX_BYTES} kwa juu).",
+                                  "en": f"Password is too long (max {PASSWORD_MAX_BYTES} bytes)."},
+    "invalid_current_password":  {"sw": "Nenosiri la sasa si sahihi.",           "en": "Current password is incorrect."},
+    "invalid_refresh_token":     {"sw": "Token ya kuongeza muda si halali.",     "en": "Invalid refresh token."},
+}
+
+TZ_PHONE_RE = re.compile(r"^(\+?255|0)\d{9}$")
+
+
+def _normalize_and_validate_phone(raw: str) -> str:
+    """Normalise to E.164 and reject anything that isn't a TZ mobile number."""
+    cleaned = re.sub(r"[\s\-\(\)]", "", raw or "")
+    if not TZ_PHONE_RE.match(cleaned):
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail={"sw": "Nambari ya simu si sahihi.", "en": "Invalid phone number."},
+        )
+    return normalize_phone(cleaned)
+
+
+def _error(code: str, http_status: int) -> HTTPException:
+    return HTTPException(status_code=http_status, detail=MSG.get(code, {"sw": "Hitilafu.", "en": "Error."}))
+
+
+async def _current_user_from_header(authorization: str, db: AsyncSession):
+    """Resolve the caller from an `Authorization: Bearer <token>` header."""
+    if not authorization or not authorization.lower().startswith("bearer "):
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=MSG["invalid_token"])
+    token = authorization.split(" ", 1)[1].strip()
+    try:
+        return await get_current_user(token, db)
+    except AuthError as exc:
+        code = "account_suspended" if exc.code == "account_suspended" else "invalid_token"
+        raise _error(code, status.HTTP_401_UNAUTHORIZED)
+
 
 # ── Pydantic schemas ───────────────────────────────────────────────────────
-
-class SendOTPRequest(BaseModel):
-    phone_number:    str = Field(..., example="+255712345678")
-    delivery_method: OTPDeliveryMethod = OTPDeliveryMethod.sms
-    lang:            str = Field(default="sw", example="sw")   # sw | en
-    purpose:         str = Field(default="login")               # login | register
-
-    @validator("phone_number")
-    def validate_phone(cls, v):
-        cleaned = re.sub(r"[\s\-\(\)]", "", v)
-        # Accept TZ formats: 07xx, +2557xx, 2557xx
-        if not re.match(r"^(\+?255|0)\d{9}$", cleaned):
-            raise ValueError("Nambari ya simu si sahihi / Invalid phone number")
-        return cleaned
-
-    @validator("lang")
-    def validate_lang(cls, v):
-        if v not in ("sw", "en"):
-            raise ValueError("Lang must be 'sw' or 'en'")
-        return v
-
-
-class VerifyOTPRequest(BaseModel):
-    phone_number: str
-    code:         str = Field(..., min_length=6, max_length=6)
-    purpose:      str = Field(default="login")
-
 
 class RegisterRequest(BaseModel):
     phone_number:      str
     full_name:         str = Field(..., min_length=2, max_length=150)
+    password:          str = Field(..., min_length=PASSWORD_MIN_LENGTH, max_length=PASSWORD_MAX_BYTES)
     business_name:     Optional[str] = None
     business_category: Optional[str] = None
     location:          Optional[str] = None
@@ -62,104 +93,36 @@ class RegisterRequest(BaseModel):
     preferred_lang:    str = "sw"
 
 
+class LoginRequest(BaseModel):
+    phone_number: str
+    password:     str
+
+
 class RefreshRequest(BaseModel):
     refresh_token: str
 
 
+class SetPasswordRequest(BaseModel):
+    new_password:     str = Field(..., min_length=PASSWORD_MIN_LENGTH, max_length=PASSWORD_MAX_BYTES)
+    current_password: Optional[str] = None
+
+
 # ── Endpoints ─────────────────────────────────────────────────────────────
 
-@router.post("/send-otp", summary="Tuma OTP / Send OTP")
-async def api_send_otp(body: SendOTPRequest, db: Session = Depends(get_db)):
-    """
-    Step 1 of auth flow.
-    Sends a 6-digit OTP via SMS (Africa's Talking) or WhatsApp (Meta Cloud API).
-    Falls back automatically if primary channel fails.
-    """
-    result = await send_otp(
-        phone   = body.phone_number,
-        db      = db,
-        purpose = body.purpose,
-        delivery= body.delivery_method,
-        lang    = body.lang,
-    )
-    if not result["success"]:
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail={
-                "sw": "Imeshindwa kutuma OTP. Tafadhali jaribu tena.",
-                "en": "Failed to send OTP. Please try again.",
-            }
-        )
-    return {
-        "message": {
-            "sw": f"Msimbo umetumwa kwa {'SMS' if result['delivery_method'] == 'sms' else 'WhatsApp'}.",
-            "en": f"Code sent via {'SMS' if result['delivery_method'] == 'sms' else 'WhatsApp'}.",
-        },
-        "delivery_method": result["delivery_method"],
-        "phone":           result["phone"],
-        # Only exposed in dev/sandbox
-        **({"otp": result["otp"]} if "otp" in result else {}),
-    }
-
-
-@router.post("/verify-otp", summary="Thibitisha OTP / Verify OTP")
-async def api_verify_otp(body: VerifyOTPRequest, db: Session = Depends(get_db)):
-    """
-    Step 2 of auth flow.
-    Verifies the OTP. On success, either logs the user in (returns tokens)
-    or signals that registration is needed.
-    """
-    phone = _normalize_phone(body.phone_number)
-
-    result = await verify_otp(
-        phone   = phone,
-        code    = body.code,
-        db      = db,
-        purpose = body.purpose,
-    )
-
-    if not result["valid"]:
-        reason = result["reason"]
-        messages = {
-            "otp_not_found":        {"sw": "Msimbo haukupatikana.", "en": "OTP not found."},
-            "otp_expired":          {"sw": "Msimbo umeisha muda. Omba mpya.", "en": "OTP expired. Request a new one."},
-            "max_attempts_exceeded":{"sw": "Majaribio mengi. Omba msimbo mpya.", "en": "Too many attempts. Request a new code."},
-            "invalid_code":         {
-                "sw": f"Msimbo si sahihi. Majaribio {result.get('attempts_remaining', 0)} zimebaki.",
-                "en": f"Invalid code. {result.get('attempts_remaining', 0)} attempts remaining.",
-            },
-        }
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=messages.get(reason, {"sw": "Hitilafu.", "en": "Error."}),
-        )
-
-    # OTP valid — attempt login
-    try:
-        # Inside api_verify_otp:
-        login_result = await login_user(phone, db)  # 💡 Added 'await' here
-    except PermissionError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail={"sw": "Akaunti imezuiwa.", "en": "Account suspended."},
-        )
-
-    return login_result
-
-
 @router.post("/register", summary="Jisajili / Register", status_code=status.HTTP_201_CREATED)
-async def api_register(body: RegisterRequest, db: Session = Depends(get_db)):
+async def api_register(body: RegisterRequest, db: AsyncSession = Depends(get_db)):
     """
-    Called after OTP verification when user is new.
-    Creates the user record and returns JWT tokens.
+    Create an account with a password and return JWT tokens immediately.
+    No OTP/phone verification step is involved.
     """
-    phone = _normalize_phone(body.phone_number)
+    phone = _normalize_and_validate_phone(body.phone_number)
 
     try:
         user = await register_user(
             phone_number      = phone,
             full_name         = body.full_name,
             db                = db,
+            password          = body.password,
             business_name     = body.business_name or "",
             business_category = body.business_category or "",
             location          = body.location or "",
@@ -167,43 +130,77 @@ async def api_register(body: RegisterRequest, db: Session = Depends(get_db)):
             preferred_lang    = body.preferred_lang,
         )
     except ValueError as exc:
-        error_map = {
-            "phone_already_registered": {"sw": "Nambari hii imeshasajiliwa.", "en": "Phone already registered."},
-            "email_already_registered": {"sw": "Barua pepe hii imeshasajiliwa.", "en": "Email already registered."},
-        }
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail=error_map.get(str(exc), {"sw": "Hitilafu.", "en": "Error."}),
-        )
+        code = str(exc)
+        if code in ("phone_already_registered", "email_already_registered"):
+            raise _error(code, status.HTTP_409_CONFLICT)
+        # weak_password / password_too_long
+        raise _error(code if code in MSG else "weak_password", status.HTTP_422_UNPROCESSABLE_ENTITY)
 
-    login_result = await login_user(phone, db)
     return {
         "message": {"sw": "Umesajiliwa kwa mafanikio!", "en": "Registration successful!"},
-        **login_result,
+        **issue_tokens(user),
     }
 
 
-@router.post("/refresh", summary="Ongeza muda wa token / Refresh token")
-async def api_refresh(body: RefreshRequest, db: Session = Depends(get_db)):
+@router.post("/login", summary="Ingia / Login")
+async def api_login(body: LoginRequest, db: AsyncSession = Depends(get_db)):
+    """Verify phone + password and return JWT tokens."""
+    phone = normalize_phone(body.phone_number or "")
     try:
-        return refresh_access_token(body.refresh_token, db)
+        user = await authenticate_user(phone, body.password, db)
+    except AuthError as exc:
+        raise _error(exc.code, status.HTTP_401_UNAUTHORIZED)
+    return issue_tokens(user)
+
+
+@router.post("/refresh", summary="Ongeza muda wa token / Refresh token")
+async def api_refresh(body: RefreshRequest, db: AsyncSession = Depends(get_db)):
+    try:
+        return await refresh_access_token(body.refresh_token, db)
     except ValueError:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail={"sw": "Token si halali.", "en": "Invalid refresh token."},
+        raise _error("invalid_refresh_token", status.HTTP_401_UNAUTHORIZED)
+
+
+@router.post("/set-password", summary="Weka nenosiri / Set password")
+async def api_set_password(
+    body: SetPasswordRequest,
+    authorization: str = Header(default=""),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Set or change the password of the authenticated caller.
+
+    This is the migration path for accounts created during the OTP-only era:
+    a user who still holds a valid access token can give their account a
+    password without any SMS. Without a token this endpoint is unreachable, so
+    it cannot be used to take over someone else's account.
+    """
+    user = await _current_user_from_header(authorization, db)
+
+    try:
+        validate_password_strength(body.new_password)
+        await set_user_password(
+            user             = user,
+            new_password     = body.new_password,
+            db               = db,
+            current_password = body.current_password,
         )
+    except AuthError:
+        raise _error("invalid_current_password", status.HTTP_400_BAD_REQUEST)
+    except ValueError as exc:
+        code = str(exc)
+        raise _error(code if code in MSG else "weak_password", status.HTTP_422_UNPROCESSABLE_ENTITY)
+
+    return {
+        "message": {"sw": "Nenosiri limewekwa.", "en": "Password updated."},
+        "user":    user.to_dict(),
+    }
 
 
 @router.get("/me", summary="Mtumiaji wa sasa / Current user")
 async def api_me(
-    authorization: str = Header(...),
-    db: Session = Depends(get_db),
+    authorization: str = Header(default=""),
+    db: AsyncSession = Depends(get_db),
 ):
-    if not authorization.startswith("Bearer "):
-        raise HTTPException(status_code=401, detail="Missing bearer token")
-    token = authorization.split(" ", 1)[1]
-    try:
-        user = get_current_user(token, db)
-        return user.to_dict()
-    except PermissionError as exc:
-        raise HTTPException(status_code=401, detail=str(exc))
+    user = await _current_user_from_header(authorization, db)
+    return user.to_dict()
