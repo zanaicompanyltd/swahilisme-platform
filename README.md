@@ -18,8 +18,8 @@
 | Service | URL |
 |---------|-----|
 | **Frontend (Vercel)** | https://swahilisme-platform.vercel.app |
-| **Backend API (Railway)** | https://swahilisme-platform-production.up.railway.app/ |
-| **API Docs (Swagger)** | https://swahilisme-platform-production.up.railway.app/docs |
+| **Backend API (Railway)** | https://swahilisme-platform-production-b5b9.up.railway.app/ |
+| **API Docs (Swagger)** | https://swahilisme-platform-production-b5b9.up.railway.app/docs |
 | **Database (Supabase)** | https://supabase.com/dashboard/org/tfegkxauyfsscdmwsuxn |
 
 ---
@@ -216,22 +216,22 @@ swahilisme-platform/
 
 ```bash
 # ✅ Health check
-curl https://swahilisme-platform.up.railway.app/health
+curl https://swahilisme-platform-production-b5b9.up.railway.app/health
 
 # ✅ 1.6.1 Revenue/Cost/Profit summary
-curl "https://swahilisme-platform.up.railway.app/api/v1/dashboard/summary?user_id=test123&period=week"
+curl "https://swahilisme-platform-production-b5b9.up.railway.app/api/v1/dashboard/summary?user_id=test123&period=week"
 
 # ✅ 1.6.1 Chart time-series data
-curl "https://swahilisme-platform.up.railway.app/api/v1/dashboard/revenue-cost-profit?user_id=test123"
+curl "https://swahilisme-platform-production-b5b9.up.railway.app/api/v1/dashboard/revenue-cost-profit?user_id=test123"
 
 # ✅ 1.6.2 Top products
-curl "https://swahilisme-platform.up.railway.app/api/v1/dashboard/top-products?user_id=test123"
+curl "https://swahilisme-platform-production-b5b9.up.railway.app/api/v1/dashboard/top-products?user_id=test123"
 
 # ✅ 1.6.3 Spending patterns
-curl "https://swahilisme-platform.up.railway.app/api/v1/dashboard/spending-patterns?user_id=test123"
+curl "https://swahilisme-platform-production-b5b9.up.railway.app/api/v1/dashboard/spending-patterns?user_id=test123"
 
 # ✅ Business Health Card status
-curl "https://swahilisme-platform.up.railway.app/api/v1/dashboard/health-card-status?user_id=test123"
+curl "https://swahilisme-platform-production-b5b9.up.railway.app/api/v1/dashboard/health-card-status?user_id=test123"
 ```
 
 ### Example API Response (1.6.1 Summary)
@@ -493,7 +493,7 @@ _Kutoka SwahiliSME — Msaidizi wako wa biashara_ 🇹🇿
 
 ### Webhook Setup (1.7.1)
 1. Go to [Meta Developers](https://developers.facebook.com) → create App
-2. Set webhook URL: `https://swahilisme-platform.up.railway.app/api/v1/whatsapp/webhook`
+2. Set webhook URL: `https://swahilisme-platform-production-b5b9.up.railway.app/api/v1/whatsapp/webhook`
 3. Verify token: `swahilisme_verify_2026`
 4. Add `WHATSAPP_TOKEN` and `WHATSAPP_PHONE_NUMBER_ID` to Railway env vars
 

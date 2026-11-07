@@ -16,9 +16,10 @@ import {
   Tooltip, Legend, ResponsiveContainer,
 } from "recharts";
 import sw from "../i18n/sw.json";
+import { BASE_URL } from "../hooks/useApi";
 
 // ── Config ────────────────────────────────────────────────────────────────────
-const API = process.env.REACT_APP_API_URL || "https://swahilisme-platform-production.up.railway.app";
+const API = BASE_URL;
 
 const COLORS = {
   primary:   "#005493",
