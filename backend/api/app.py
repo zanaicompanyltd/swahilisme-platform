@@ -17,7 +17,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 # ✅ Import DB setup
-from db.database import init_db
+from db.database import engine, init_db
 
 # ✅ Import all models so SQLAlchemy registers them on Base before init_db runs
 import models  # noqa: F401 — triggers backend/models/__init__.py
@@ -45,6 +45,12 @@ async def lifespan(app: FastAPI):
         raise  # ← crash fast so Railway shows the real error
     yield
     logger.info("Shutting down")
+    # Close pooled connections so aiosqlite/asyncpg worker threads exit and the
+    # process terminates promptly on SIGTERM (Railway's deploy/restart).
+    try:
+        await engine.dispose()
+    except Exception as exc:                      # pragma: no cover
+        logger.warning("Engine dispose failed: %s", exc)
 
 
 app = FastAPI(

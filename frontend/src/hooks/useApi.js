@@ -88,38 +88,18 @@ function isNetworkError(err) {
 // AUTH
 // ─────────────────────────────────────────────────────────────────────────────
 
-export async function sendOTP(phoneNumber, lang = "sw") {
-  const res = await fetch(`${BASE_URL}/auth/send-otp`, {
+export async function loginUser(phoneNumber, password, lang = "sw") {
+  const res = await fetch(`${BASE_URL}/auth/login`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      phone_number:    phoneNumber,
-      delivery_method: "sms",
-      lang,
-      purpose:         "login",
-    }),
-  });
-  const data = await res.json().catch(() => ({ detail: res.statusText }));
-  if (!res.ok) throw new Error(extractError(data.detail, lang));
-  return {
-    message:         extractError(data.message, lang),
-    delivery_method: data.delivery_method,
-    phone:           data.phone,
-    otp:             data.otp,
-  };
-}
-
-export async function verifyOTP(phoneNumber, code, lang = "sw") {
-  const res = await fetch(`${BASE_URL}/auth/verify-otp`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ phone_number: phoneNumber, code, purpose: "login" }),
+    body: JSON.stringify({ phone_number: phoneNumber, password }),
   });
   const data = await res.json().catch(() => ({ detail: res.statusText }));
   if (!res.ok) throw new Error(extractError(data.detail, lang));
   return data;
 }
 
+// payload must include: phone_number, full_name, password
 export async function registerUser(payload, lang = "sw") {
   const res = await fetch(`${BASE_URL}/auth/register`, {
     method: "POST",

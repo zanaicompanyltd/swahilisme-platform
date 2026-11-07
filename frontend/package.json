@@ -14,7 +14,7 @@
   "scripts": {
     "start": "react-scripts start",
     "build": "CI=false react-scripts build",
-    "test": "echo \"No tests\" && exit 0",
+    "test": "CI=true react-scripts test --watchAll=false",
     "eject": "react-scripts eject"
   },
   "eslintConfig": {

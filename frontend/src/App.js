@@ -1,5 +1,6 @@
 // App.js — SwahiliSME Platform
-// Auth gate added: shows AuthPage until user is verified, then loads the app
+// Auth gate: shows AuthPage (phone + password login/registration) until the
+// user is authenticated, then loads the app. No OTP step is involved.
 
 import React from "react";
 import {
