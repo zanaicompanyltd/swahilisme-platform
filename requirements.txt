@@ -7,6 +7,7 @@ starlette==0.37.2
 # ── Database ──────────────────────────────────────────────────────────────────
 SQLAlchemy==2.0.30
 asyncpg==0.31.0
+psycopg2-binary==2.9.13   # sync driver used by api/routes/dashboard.py
 aiosqlite==0.22.1
 
 # ── Auth & Security ───────────────────────────────────────────────────────────
