@@ -6,6 +6,19 @@ import sys
 import logging
 from contextlib import asynccontextmanager
 
+# ✅ Import root — do this BEFORE any backend import below.
+# This package uses flat top-level imports (`db.database`, `models.user`,
+# `services.*`, `api.routes.*`), so the `backend/` directory must be on
+# sys.path. start.sh + the Dockerfile set PYTHONPATH, but a platform start
+# command such as `uvicorn backend.api.app:app` (Railway dashboard override)
+# runs without it and used to crash with:
+#     ModuleNotFoundError: No module named 'db'
+# Deriving the path from this file's location makes EVERY entrypoint work,
+# whatever the working directory or PYTHONPATH happens to be.
+_BACKEND_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+if _BACKEND_DIR not in sys.path:
+    sys.path.insert(0, _BACKEND_DIR)
+
 # ✅ Load .env FIRST — before anything else reads environment variables
 try:
     from dotenv import load_dotenv
