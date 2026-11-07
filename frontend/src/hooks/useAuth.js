@@ -7,8 +7,11 @@
 
 import { useState, useCallback, useEffect } from "react";
 
+import { BASE_URL } from "./useApi";
+
 // ── Backend base URL — NO /api/v1 prefix (auth routes are at /auth/...) ───────
-const API_BASE    = process.env.REACT_APP_API_URL || "http://localhost:8000";
+// Single source of truth: useApi.js resolves and normalises REACT_APP_API_URL.
+const API_BASE    = BASE_URL;
 const TOKEN_KEY   = "swahilisme_access_token";
 const REFRESH_KEY = "swahilisme_refresh_token";
 const USER_KEY    = "swahilisme_user";

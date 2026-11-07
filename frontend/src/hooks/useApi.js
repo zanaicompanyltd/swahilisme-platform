@@ -6,9 +6,25 @@
  *   REACT_APP_API_URL=https://your-backend.up.railway.app
  */
 
-const BASE_URL = (
-  process.env.REACT_APP_API_URL || "http://localhost:8000"
-).replace(/\/$/, ""); // strip trailing slash
+/**
+ * Turn REACT_APP_API_URL into an absolute origin.
+ *
+ * Handles the mistakes that silently break the build:
+ *   "my-service.up.railway.app"   → "https://my-service.up.railway.app"
+ *   "https://host/"               → "https://host"
+ *   "" / undefined                → http://localhost:8000 (local dev)
+ *
+ * A value without a scheme is NOT an absolute URL: `fetch()` would resolve it
+ * against the Vercel origin and quietly hit the SPA instead of the API.
+ */
+export function resolveApiBase(raw) {
+  const value = String(raw || "").trim();
+  if (!value) return "http://localhost:8000";
+  const absolute = /^https?:\/\//i.test(value) ? value : `https://${value}`;
+  return absolute.replace(/\/+$/, "");
+}
+
+const BASE_URL = resolveApiBase(process.env.REACT_APP_API_URL);
 
 // A production bundle that still points at localhost can never work — say so
 // loudly instead of failing silently in the browser console.
