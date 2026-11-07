@@ -1,3 +1,13 @@
+import os
+import sys
+
+# Import root bootstrap — see backend/api/app.py. The backend uses flat
+# top-level imports (db.database, models.*, services.*), so `backend/` must be
+# importable no matter which directory or start command launched this file.
+_BACKEND_DIR = os.path.dirname(os.path.abspath(__file__))
+if _BACKEND_DIR not in sys.path:
+    sys.path.insert(0, _BACKEND_DIR)
+
 from fastapi import FastAPI
 from db.database import init_db
 from fastapi.exceptions import RequestValidationError

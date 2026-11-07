@@ -390,12 +390,19 @@ must be on `sys.path` / `PYTHONPATH`. Everything below follows from that rule:
 | Context | Correct command | Import root |
 |---|---|---|
 | Docker / Railway | `/app/start.sh` | `/app/backend` (`WORKDIR` + `PYTHONPATH`) |
+| Any plain `uvicorn` command | `uvicorn backend.api.app:app` (repo root) **or** `uvicorn api.app:app` (from `backend/`) | `/app/backend`, added by the app itself |
 | Local dev | `cd backend && uvicorn api.app:app --reload` | `backend/` (cwd) |
 | Local dev (script) | `python run.py` | `backend/` (set by the script) |
 
-⚠️ `uvicorn backend.api.app:app` will **not** work — it puts the repo root on
-`sys.path`, where no `db` / `models` / `services` package exists, and the app
-dies with `ModuleNotFoundError: No module named 'db'`.
+`backend/api/app.py` (and `backend/main.py`) now put the directory they live in
+on `sys.path` **before** importing `db` / `models` / `services`. The import root
+is therefore derived from the file's own location instead of from the working
+directory or `PYTHONPATH`, so the app boots from *any* entrypoint — including a
+platform start command such as
+`uvicorn backend.api.app:app --host 0.0.0.0 --port $PORT` that bypasses
+`start.sh` entirely. This is what a Railway dashboard **Start Command** override
+does, and it is the reason a deploy can still crash with
+`ModuleNotFoundError: No module named 'db'` even when the image is correct.
 
 ### Railway service settings
 
