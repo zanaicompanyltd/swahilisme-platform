@@ -17,16 +17,8 @@ import {
 } from "../hooks/useApi";
 
 import { useVoiceRecorder } from "../hooks/useVoiceRecorder";
+import { resolveLedgerUserId } from "../utils/identity";
 // import sw from "../i18n/sw";
-
-// ── USER ID ───────────────────────────────────────────────────────────────────
-const USER_ID = (() => {
-  const stored = localStorage.getItem("daftari_user_id");
-  if (stored) return stored;
-  const id = "demo-user-001";
-  localStorage.setItem("daftari_user_id", id);
-  return id;
-})();
 
 // ── Design tokens ─────────────────────────────────────────────────────────────
 const T = {
@@ -143,7 +135,20 @@ const EMPTY_FORM = {
 // ═════════════════════════════════════════════════════════════════════════════
 // MAIN COMPONENT
 // ═════════════════════════════════════════════════════════════════════════════
-export default function DaftariYangu() {
+export default function DaftariYangu({ user }) {
+  const userId = resolveLedgerUserId(user);
+  if (!userId) {
+    return (
+      <main role="alert" style={{ padding: 24, fontFamily: "system-ui, sans-serif" }}>
+        Akaunti haijatambuliwa. Tafadhali toka nje kisha ingia tena.
+      </main>
+    );
+  }
+
+  return <DaftariWorkspace user={user} userId={userId} />;
+}
+
+function DaftariWorkspace({ user, userId }) {
   const [tab, setTab]          = useState("rekodi");
   const [transactions, setTxs] = useState([]);
   const [summary, setSummary]  = useState(null);
@@ -182,8 +187,8 @@ export default function DaftariYangu() {
   const reload = useCallback(async () => {
     try {
       const [txs, sum] = await Promise.all([
-        listTransactions(USER_ID, { limit:50 }),
-        getSummary(USER_ID, 30),
+        listTransactions(userId, { limit:50 }),
+        getSummary(userId, 30),
       ]);
       setTxs(Array.isArray(txs) ? txs : []);
       setSummary(sum);
@@ -198,10 +203,10 @@ export default function DaftariYangu() {
     setALd(true);
     try {
       const [chart, products, spend, dash] = await Promise.all([
-        getRevenueCostProfit(USER_ID, 7),
-        getTopProducts(USER_ID, "week"),
-        getSpendingPatterns(USER_ID, "week"),
-        getDashboardSummary(USER_ID, "week"),
+        getRevenueCostProfit(userId, 7),
+        getTopProducts(userId, "week"),
+        getSpendingPatterns(userId, "week"),
+        getDashboardSummary(userId, "week"),
       ]);
       if (chart?.labels?.length) {
         setChart(chart.labels.map((label, i) => ({
@@ -234,7 +239,7 @@ export default function DaftariYangu() {
   
       showToast(`🔄 Inasawazisha miamala ${count}…`, "info");
       try {
-        const res = await syncOfflineQueue(USER_ID);
+        const res = await syncOfflineQueue(userId);
         if (res.synced > 0) {
           showToast(`✅ Miamala ${res.synced} imesawazishwa!`, "success");
           setOff(0);
@@ -265,9 +270,15 @@ export default function DaftariYangu() {
 
   // ── Transcribe ──────────────────────────────────────────────────────────────
   async function handleTranscribe(blob) {
+    if (!blob || blob.size === 0) {
+      showToast("❌ Rekodi haina sauti. Shikilia kurekodi kwa sekunde chache kisha ujaribu tena.", "error");
+      recorder.reset();
+      return;
+    }
+
     setTrans(true);
     try {
-      const result = await transcribeAudio(USER_ID, blob, "audio.webm");
+      const result = await transcribeAudio(userId, blob);
       setTranscript(result.transcript || "");
       if (result.nlp) {
         const n   = result.nlp;
@@ -310,7 +321,7 @@ export default function DaftariYangu() {
       // ✅ Pass structured fields so backend uses them directly
       // instead of guessing from NLP
       const result = await createTransaction({
-        user_id:          USER_ID,
+        user_id:          userId,
         text:             muamalaText.trim(),
         _type:            form.type,
         _category:        form.category,
@@ -344,7 +355,7 @@ export default function DaftariYangu() {
         const muamalaText = `${tx.transaction_type === "mapato" ? "Mapato ya" : "Gharama ya"} ${tx.amount} kwenye kundi la ${tx.category}. ${tx.description || ""}`;
 
         await createTransaction({
-          user_id: USER_ID,
+          user_id: userId,
           text:    muamalaText.trim(),
         });
         saved++;
@@ -360,7 +371,7 @@ export default function DaftariYangu() {
   async function handleDelete(id) {
     if (!window.confirm("Futa muamala huu?")) return;
     try {
-      await deleteTransaction(id, USER_ID);
+      await deleteTransaction(id, userId);
       showToast("🗑️ Imefutwa", "info");
       setAL(false); reload();
     } catch (err) { showToast("❌ " + err.message, "error"); }
@@ -368,7 +379,7 @@ export default function DaftariYangu() {
 
   async function handleHealthCard() {
     setPdf(true);
-    try { await downloadHealthCard(USER_ID, 90); showToast("✅ PDF imepakuliwa!", "success"); }
+    try { await downloadHealthCard(userId, 90); showToast("✅ PDF imepakuliwa!", "success"); }
     catch (err) { showToast("❌ " + err.message, "error"); }
     finally { setPdf(false); }
   }
@@ -403,7 +414,7 @@ export default function DaftariYangu() {
                 {navigator.onLine
                   ? <span style={{ color:"#6ee7b7" }}>● Mtandaoni</span>
                   : <span style={{ color:"#fca5a5" }}>● Nje ya mtandao</span>}
-                {" · "}{USER_ID}
+                {" · "}{user?.phone_number || userId}
               </div>
             </div>
           </div>  {/* ← this </div> was missing */}
@@ -424,7 +435,7 @@ export default function DaftariYangu() {
                   }
                   showToast(`🔄 Inasawazisha miamala ${offlineCount}…`, "info");
                   try {
-                    const res = await syncOfflineQueue(USER_ID);
+                    const res = await syncOfflineQueue(userId);
                     if (res.synced > 0) {
                       showToast(`✅ Miamala ${res.synced} imesawazishwa!`, "success");
                       setAL(false);

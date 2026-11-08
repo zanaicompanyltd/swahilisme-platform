@@ -51,7 +51,14 @@ export function useVoiceRecorder() {
       chunksRef.current = [];
 
       recorder.ondataavailable = (e) => {
-        if (e.data.size > 0) chunksRef.current.push(e.data);
+        if (e.data && e.data.size > 0) chunksRef.current.push(e.data);
+      };
+
+      recorder.onerror = () => {
+        setError("Hitilafu imetokea wakati wa kurekodi sauti. Jaribu tena.");
+        setState("idle");
+        clearInterval(timerRef.current);
+        stream.getTracks().forEach((track) => track.stop());
       };
 
       recorder.onstop = () => {
@@ -85,7 +92,15 @@ export function useVoiceRecorder() {
     clearInterval(timerRef.current);
     setDuration(0);
     if (mediaRecorderRef.current?.state === "recording") {
-      mediaRecorderRef.current.stop();
+      const recorder = mediaRecorderRef.current;
+      try {
+        // Flush the browser's final buffered samples before stop. Some mobile
+        // browsers otherwise produce a zero-byte Blob for short recordings.
+        recorder.requestData?.();
+      } catch {
+        // stop() still emits its final dataavailable event in supported browsers.
+      }
+      recorder.stop();
       setState("processing");
     }
   }, []);

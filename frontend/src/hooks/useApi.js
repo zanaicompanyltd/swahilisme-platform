@@ -199,16 +199,23 @@ export async function refreshToken(token) {
 
 /**
  * transcribeAudio — send voice blob to backend for ASR + NLP
- * NOTE: parameter order is (userId, audioBlob) to match DaftariYangu.jsx call:
- *   transcribeAudio(USER_ID, blob, "audio.webm")
+ * NOTE: parameter order is (userId, audioBlob); the filename is inferred from
+ * the Blob's MIME type unless a caller explicitly overrides it.
  */
-export async function transcribeAudio(userId, audioBlob, filename = "audio.webm") {
+export async function transcribeAudio(userId, audioBlob, filename = null) {
+  if (!audioBlob || typeof audioBlob.size !== "number" || audioBlob.size === 0) {
+    throw new Error("Rekodi haina sauti. Shikilia kurekodi kwa sekunde chache kisha ujaribu tena.");
+  }
+
   const formData = new FormData();
 
-  // Pick the right extension from the blob's MIME type
+  // Match the upload filename to MediaRecorder's actual codec/container so the
+  // backend can choose the right decoder even when the browser uses Ogg or MP4.
+  const mimeType = audioBlob.type || "audio/webm";
   let ext = "webm";
-  if (audioBlob.type.includes("ogg"))  ext = "ogg";
-  else if (audioBlob.type.includes("mp4")) ext = "mp4";
+  if (mimeType.includes("ogg")) ext = "ogg";
+  else if (mimeType.includes("mp4")) ext = "mp4";
+  else if (mimeType.includes("wav")) ext = "wav";
   const fname = filename || `recording.${ext}`;
 
   formData.append("audio",   audioBlob, fname);

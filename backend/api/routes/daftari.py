@@ -103,7 +103,9 @@ async def transcribe_audio(
         try:
             asr_result = await asr.transcribe(audio_bytes, filename=audio.filename or "audio.webm")
         except RuntimeError as e:
-            raise HTTPException(500, str(e))
+            # Service misconfiguration (for example, missing Groq key) should
+            # be visible to the client, not replaced by a fake transcript.
+            raise HTTPException(503, str(e))
 
         nlp        = get_nlp_service()
         nlp_result = nlp.extract(asr_result.transcript)
