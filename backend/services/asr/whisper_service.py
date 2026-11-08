@@ -37,7 +37,7 @@ class WhisperASRService:
     def __init__(self):
         self._api_key = os.getenv("GROQ_API_KEY", "")
         if not self._api_key:
-            logger.warning("GROQ_API_KEY not set – using MockASRService")
+            logger.warning("GROQ_API_KEY not set – speech transcription is disabled")
         else:
             logger.info("WhisperASRService ready using Groq Whisper Large V3 Turbo")
 
@@ -46,7 +46,10 @@ class WhisperASRService:
             raise ValueError(f"Audio file exceeds {MAX_AUDIO_SIZE_MB}MB limit")
 
         if not self._api_key:
-            return await _mock_transcribe(audio_bytes, filename)
+            # Never invent transactions when speech recognition is unavailable.
+            # The old mock returned rotating sample sentences, which looked like
+            # real Whisper results and could be saved as false financial data.
+            raise RuntimeError("Speech transcription is unavailable: GROQ_API_KEY is not configured")
 
         # Save original audio to temp file
         suffix = Path(filename).suffix or ".webm"
@@ -145,31 +148,6 @@ def _estimate_confidence(segments: list) -> float:
         return 0.85
     avg = sum(log_probs) / len(log_probs)
     return max(0.0, min(1.0, avg + 1.0))
-
-
-# ── Mock fallback ─────────────────────────────────────────────────────────────
-MOCK_RESPONSES = [
-    "Nimeuza ndizi mia mbili leo, jumla shilingi elfu ishirini",
-    "Nimenunua unga wa dona mifuko mitano, bei shilingi elfu kumi na mbili",
-    "Leo nimepata mapato ya huduma shilingi elfu thelathini na tano",
-    "Nililipa kodi ya duka shilingi elfu hamsini mwezi huu",
-]
-
-_mock_index = 0
-
-
-async def _mock_transcribe(audio_bytes: bytes, filename: str) -> ASRResult:
-    global _mock_index
-    transcript = MOCK_RESPONSES[_mock_index % len(MOCK_RESPONSES)]
-    _mock_index += 1
-    logger.info(f"[MOCK ASR] Returning: {transcript}")
-    return ASRResult(
-        transcript=transcript,
-        language="sw",
-        confidence=0.92,
-        duration_seconds=3.5,
-        segments=[],
-    )
 
 
 # ── Singleton ─────────────────────────────────────────────────────────────────
