@@ -3,17 +3,13 @@
    Caches the app shell and queues transactions when offline
    ============================================================ */
 
-const CACHE_NAME = "swahilisme-v1.0.0";
+// Bump this on releases that change app identity/auth behavior. Activation
+// removes the prior cache, including stale per-device app shells.
+const CACHE_NAME = "swahilisme-v1.0.1";
 
-// Files to cache for offline use (the app shell)
-const SHELL_ASSETS = [
-  "/",
-  "/index.html",
-  "/manifest.json",
-  "/static/js/main.chunk.js",
-  "/static/js/bundle.js",
-  "/static/css/main.chunk.css",
-];
+// CRA emits content-hashed JS/CSS names, so they are cached as encountered.
+// Keep only the documents needed to launch the app while offline.
+const SHELL_ASSETS = ["/", "/index.html", "/manifest.json"];
 
 // ── Install: cache app shell ──────────────────────────────────────────────
 self.addEventListener("install", (event) => {
@@ -54,12 +50,37 @@ self.addEventListener("fetch", (event) => {
     return;
   }
 
-  // Static assets: cache-first
+  // Always fetch HTML documents first. A cache-first index.html can keep an
+  // old JavaScript bundle (and old account-ID logic) alive on a device after a
+  // Vercel deployment. Keep the latest app shell cached only as an offline
+  // fallback.
+  if (request.mode === "navigate" || url.pathname === "/" || url.pathname === "/index.html") {
+    event.respondWith(
+      fetch(request)
+        .then((response) => {
+          if (response.ok) {
+            const clone = response.clone();
+            caches.open(CACHE_NAME).then((cache) => cache.put(request, clone));
+          }
+          return response;
+        })
+        .catch(async () => {
+          const cache = await caches.open(CACHE_NAME);
+          return (await cache.match(request))
+            || (await cache.match("/index.html"))
+            || (await cache.match("/"))
+            || new Response("Huna mtandao. Fungua programu ukiwa mtandaoni mara moja kisha ujaribu tena.", { status: 503 });
+        })
+    );
+    return;
+  }
+
+  // Content-hashed JS/CSS and other static files: cache-first is safe because
+  // a changed build receives a new URL. Cache new assets as we encounter them.
   event.respondWith(
     caches.match(request).then((cached) => {
       if (cached) return cached;
       return fetch(request).then((response) => {
-        // Cache new static files as we encounter them
         if (response.ok) {
           const clone = response.clone();
           caches.open(CACHE_NAME).then((cache) => cache.put(request, clone));
