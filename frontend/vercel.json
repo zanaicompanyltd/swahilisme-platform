@@ -9,7 +9,11 @@
       "destination": "https://swahilisme-platform-production-b5b9.up.railway.app/api/v1/$1"
     },
     {
-      "source": "/((?!auth|api/v1).*)",
+      "source": "/daftari/(.*)",
+      "destination": "https://swahilisme-platform-production-b5b9.up.railway.app/daftari/$1"
+    },
+    {
+      "source": "/((?!auth|api/v1|daftari).*)",
       "destination": "/index.html"
     }
   ],

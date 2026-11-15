@@ -22,6 +22,7 @@ from models.user import User
 from services.asr.whisper_service import get_asr_service
 from services.nlp.swahili_ner import get_nlp_service
 from services import ledger_service
+from services.pdf.filename import safe_business_filename
 
 # Import PDF generator — wrapped so missing module doesn't crash startup
 try:
@@ -363,12 +364,15 @@ async def get_health_card(
     top_products = await ledger_service.get_top_products(db, user_id, days)
     spending     = await ledger_service.get_spending_by_category(db, user_id, days)
 
+    business_name = (user.business_name or "").strip() or "Biashara Yangu"
+    owner_name = (user.name or "").strip() or "Mmiliki"
+
     pdf_bytes = None
     if generate_health_card:
         try:
             pdf_bytes = generate_health_card(
-                business_name=user.business_name,
-                owner_name=user.name,
+                business_name=business_name,
+                owner_name=owner_name,
                 summary=summary,
                 top_products=top_products,
                 spending_by_category=spending,
@@ -383,7 +387,7 @@ async def get_health_card(
         pdf_bytes = _generate_health_card_fallback(user, summary, days)
 
     filename = (
-        f"kadi-afya-{user.business_name.replace(' ', '-').lower()}"
+        f"kadi-afya-{safe_business_filename(business_name)}"
         f"-{datetime.utcnow().strftime('%Y%m%d')}.pdf"
     )
     return Response(
@@ -404,6 +408,8 @@ def _generate_health_card_fallback(user, summary: dict, days: int) -> bytes:
         revenue = float(summary.get("total_revenue", 0) or 0)
         cost    = float(summary.get("total_cost",    0) or 0)
         profit  = revenue - cost
+        business_name = (user.business_name or "").strip() or "Biashara Yangu"
+        owner_name = (user.name or "").strip() or "Mmiliki"
         margin  = round((profit / revenue) * 100, 1) if revenue else 0
 
         buffer = io.BytesIO()
@@ -419,8 +425,8 @@ def _generate_health_card_fallback(user, summary: dict, days: int) -> bytes:
             Paragraph("Kadi ya Afya ya Biashara", title_style),
             Paragraph("Business Health Card — SwahiliSME Platform", styles["Normal"]),
             Spacer(1, 0.5*cm),
-            Paragraph(f"<b>Jina la Biashara:</b> {user.business_name}", styles["Normal"]),
-            Paragraph(f"<b>Mmiliki:</b> {user.name}", styles["Normal"]),
+            Paragraph(f"<b>Jina la Biashara:</b> {business_name}", styles["Normal"]),
+            Paragraph(f"<b>Mmiliki:</b> {owner_name}", styles["Normal"]),
             Paragraph(f"<b>Kipindi:</b> Siku {days} zilizopita", styles["Normal"]),
             Paragraph(f"<b>Tarehe:</b> {datetime.now().date()}", styles["Normal"]),
             Spacer(1, 0.5*cm),
