@@ -421,14 +421,27 @@ export async function getSpendingPatterns(userId, period = "week") {
 
 // ── Health card ───────────────────────────────────────────────────────────────
 
+export function healthCardRequestUrl(userId, days = 90, pageOrigin = "") {
+  const hostname = pageOrigin ? new URL(pageOrigin).hostname : "";
+  const isLocal = hostname === "localhost" || hostname === "127.0.0.1";
+  // In production, download through Vercel's same-origin proxy to avoid
+  // cross-origin/CORS failures on the binary PDF response. Local development
+  // continues to call the configured API directly.
+  const origin = pageOrigin && !isLocal ? pageOrigin.replace(/\/+$/, "") : BASE_URL;
+  return `${origin}/daftari/health-card?user_id=${encodeURIComponent(userId)}&days=${days}`;
+}
+
 export async function downloadHealthCard(userId, days = 90) {
+  const url = healthCardRequestUrl(
+    userId,
+    days,
+    typeof window !== "undefined" ? window.location.origin : ""
+  );
   let res;
   try {
-    res = await fetch(
-      `${BASE_URL}/daftari/health-card?user_id=${encodeURIComponent(userId)}&days=${days}`
-    );
+    res = await fetch(url);
   } catch (networkErr) {
-    throw new Error(`Failed to fetch: ${networkErr.message}`);
+    throw new Error(`Failed to fetch ${url}: ${networkErr.message}`);
   }
 
   if (!res.ok) {
@@ -436,15 +449,15 @@ export async function downloadHealthCard(userId, days = 90) {
     throw new Error(extractError(err.detail));
   }
 
-  const blob     = await res.blob();
-  const url      = URL.createObjectURL(blob);
-  const a        = document.createElement("a");
-  a.href         = url;
+  const blob      = await res.blob();
+  const objectUrl = URL.createObjectURL(blob);
+  const a         = document.createElement("a");
+  a.href          = objectUrl;
   a.download     = `kadi-afya-${new Date().toISOString().slice(0, 10)}.pdf`;
   document.body.appendChild(a);
   a.click();
   document.body.removeChild(a);
-  URL.revokeObjectURL(url);
+  URL.revokeObjectURL(objectUrl);
   return { success: true };
 }
 
